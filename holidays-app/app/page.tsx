@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function getTodayDate() {
   const now = new Date();
@@ -8,34 +8,15 @@ function getTodayDate() {
   return new Date(now.getTime() - offset * 60_000).toISOString().split("T")[0];
 }
 
-function formatDisplayDate(date: string) {
-  if (!date) {
-    return "the selected date";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T00:00:00Z`));
-}
-
 export default function Home() {
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(getTodayDate);
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const hasAutoLoaded = useRef(false);
 
-  useEffect(() => {
-    setDate(getTodayDate());
-  }, []);
-
-  const formattedDate = formatDisplayDate(date);
-
-  async function handleSubmit() {
-    if (!date) {
+  async function fetchHolidays(selectedDate: string) {
+    if (!selectedDate) {
       setError("Choose a date before checking holidays.");
       setResult("");
       return;
@@ -51,10 +32,13 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ date }),
+        body: JSON.stringify({ date: selectedDate }),
       });
 
-      const data = (await response.json()) as { error?: string; result?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        result?: string;
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Something went wrong while checking holidays.");
@@ -66,6 +50,19 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    if (!date || hasAutoLoaded.current) {
+      return;
+    }
+
+    hasAutoLoaded.current = true;
+    void fetchHolidays(date);
+  }, [date]);
+
+  function handleSubmit() {
+    void fetchHolidays(date);
   }
 
   return (
@@ -106,7 +103,7 @@ export default function Home() {
 
         <div className="mt-8 min-h-52 rounded-2xl bg-gray-50 p-5">
           {loading ? (
-            <p className="text-sm text-slate-600">Checking holidays for {formattedDate}...</p>
+            <p className="text-sm text-slate-600">Checking holidays for {date}...</p>
           ) : null}
 
           {!loading && error ? (
