@@ -91,6 +91,30 @@ When prompted for `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID`, enter:
 npm run deploy
 ```
 
+## Cloudflare GitHub Integration
+
+If Cloudflare is connected directly to this GitHub repository, do not use `npx wrangler deploy` as the deploy command from the repository root.
+
+This repo stores the actual worker app in `holidays-app/`, and the OpenNext build must run before Wrangler deploys the worker. A raw root-level Wrangler deploy skips that build output and fails.
+
+Use these settings in Cloudflare:
+
+- Repository root: keep the repository root as-is
+- Deploy command: `npm run deploy`
+
+The root-level `package.json` forwards that command into `holidays-app/`, installs the app dependencies, runs the OpenNext build, and then deploys with Wrangler.
+
+Required Cloudflare secrets in the Worker project:
+
+- `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID`
+- `CLOUDFLARE_WORKERS_AI_API_TOKEN`
+
+If you prefer to configure a root directory in Cloudflare instead, set the root directory to `holidays-app` and use this deploy command there:
+
+```bash
+npm run deploy
+```
+
 ## Useful Commands
 
 Run the standard Next.js dev server:
@@ -153,6 +177,4 @@ If deployment fails, check these first:
 - `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID` is set to `395dec4bb97ccf6a2a1dfc7e4e81116f` locally and as a deployed secret.
 - `CLOUDFLARE_WORKERS_AI_API_TOKEN` is valid and has Workers AI permission.
 - The worker name in `wrangler.jsonc` does not conflict with another worker in the same account.
-
-
-## Claudflare github integration is enabled
+- Cloudflare GitHub integration is using `npm run deploy`, not `npx wrangler deploy`.

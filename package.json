@@ -1,0 +1,10 @@
+{
+  "name": "public-holiday-app-cf",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix holidays-app run dev",
+    "build": "npm --prefix holidays-app run build",
+    "preview": "npm --prefix holidays-app run preview",
+    "deploy": "npm --prefix holidays-app ci && npm --prefix holidays-app run deploy"
+  }
+}
