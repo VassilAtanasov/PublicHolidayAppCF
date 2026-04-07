@@ -153,3 +153,6 @@ If deployment fails, check these first:
 - `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID` is set to `395dec4bb97ccf6a2a1dfc7e4e81116f` locally and as a deployed secret.
 - `CLOUDFLARE_WORKERS_AI_API_TOKEN` is valid and has Workers AI permission.
 - The worker name in `wrangler.jsonc` does not conflict with another worker in the same account.
+
+
+## Claudflare github integration is enabled
