@@ -2,8 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "main": ".open-next/worker.js",
   "name": "holidays-app",
+  "account_id": "395dec4bb97ccf6a2a1dfc7e4e81116f",
   "compatibility_date": "2026-04-06",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "secrets": {
+    "required": ["CLOUDFLARE_WORKERS_AI_ACCOUNT_ID", "CLOUDFLARE_WORKERS_AI_API_TOKEN"]
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"

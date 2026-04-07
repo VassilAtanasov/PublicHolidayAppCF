@@ -22,8 +22,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Date is required." }, { status: 400 });
     }
 
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-    const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+    const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
+    const apiToken = process.env.CLOUDFLARE_WORKERS_AI_API_TOKEN;
 
     if (!accountId || !apiToken) {
       return NextResponse.json(
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. No explanations.`;
 
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(MODEL)}`,
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
         method: "POST",
         headers: {

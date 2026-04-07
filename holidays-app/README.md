@@ -24,8 +24,8 @@ npm install
 Create a local env file named `.env.local`:
 
 ```env
-CLOUDFLARE_ACCOUNT_ID=395dec4bb97ccf6a2a1dfc7e4e81116f
-CLOUDFLARE_API_TOKEN=your_workers_ai_token
+CLOUDFLARE_WORKERS_AI_ACCOUNT_ID=395dec4bb97ccf6a2a1dfc7e4e81116f
+CLOUDFLARE_WORKERS_AI_API_TOKEN=your_workers_ai_token
 ```
 
 Start the app:
@@ -56,8 +56,8 @@ https://dash.cloudflare.com/profile/api-tokens
 Add these values to `.env.local`:
 
 ```env
-CLOUDFLARE_ACCOUNT_ID=395dec4bb97ccf6a2a1dfc7e4e81116f
-CLOUDFLARE_API_TOKEN=your_workers_ai_token
+CLOUDFLARE_WORKERS_AI_ACCOUNT_ID=395dec4bb97ccf6a2a1dfc7e4e81116f
+CLOUDFLARE_WORKERS_AI_API_TOKEN=your_workers_ai_token
 ```
 
 ## Deploying To Cloudflare
@@ -75,11 +75,11 @@ npx wrangler login
 3. Set the production secrets on the deployed worker:
 
 ```bash
-npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
-npx wrangler secret put CLOUDFLARE_API_TOKEN
+npx wrangler secret put CLOUDFLARE_WORKERS_AI_ACCOUNT_ID
+npx wrangler secret put CLOUDFLARE_WORKERS_AI_API_TOKEN
 ```
 
-When prompted for `CLOUDFLARE_ACCOUNT_ID`, enter:
+When prompted for `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID`, enter:
 
 ```text
 395dec4bb97ccf6a2a1dfc7e4e81116f
@@ -150,6 +150,6 @@ npm run cf-typegen
 If deployment fails, check these first:
 
 - Wrangler login is using a user that has access to account `395dec4bb97ccf6a2a1dfc7e4e81116f`.
-- `CLOUDFLARE_ACCOUNT_ID` is set to `395dec4bb97ccf6a2a1dfc7e4e81116f` locally and as a deployed secret.
-- `CLOUDFLARE_API_TOKEN` is valid and has Workers AI permission.
+- `CLOUDFLARE_WORKERS_AI_ACCOUNT_ID` is set to `395dec4bb97ccf6a2a1dfc7e4e81116f` locally and as a deployed secret.
+- `CLOUDFLARE_WORKERS_AI_API_TOKEN` is valid and has Workers AI permission.
 - The worker name in `wrangler.jsonc` does not conflict with another worker in the same account.
