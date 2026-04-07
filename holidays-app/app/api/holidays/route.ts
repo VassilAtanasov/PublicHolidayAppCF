@@ -34,6 +34,7 @@ export async function POST(request: Request) {
 
     const formattedDate = formatDate(date);
     const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. No explanations.`;
+    console.log("Holiday prompt:", prompt);
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
