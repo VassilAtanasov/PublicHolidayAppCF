@@ -45,8 +45,9 @@ export default function Home() {
       }
 
       setResult(data.result ?? "No results returned.");
-    } catch {
-      setError("Could not check holidays right now. Verify your Cloudflare credentials and try again.");
+    } catch (error) {
+      console.error("Error:", error);
+      setError("Could not check holidays right now." + (error instanceof Error ? ` Details: ${error.message}` : ""));
     } finally {
       setLoading(false);
     }

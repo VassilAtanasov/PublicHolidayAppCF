@@ -185,6 +185,7 @@ export async function POST(request: Request) {
         },
       );
 
+      console.log("Response:", data);
       if (!finalResponse.ok) {
         const modelResponse = data.result?.response;
         return NextResponse.json({
