@@ -130,8 +130,34 @@ export async function POST(request: Request) {
         });
       }
 
-      const mcpData = await mcpResponse.json();
-      console.log("MCP response:", mcpData);
+      // MCP returns SSE format, need to parse it
+      const mcpText = await mcpResponse.text();
+      console.log("MCP raw response:", mcpText);
+
+      // Parse SSE format: "data: {...}\n\n"
+      const lines = mcpText.split('\n');
+      let mcpData = null;
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            mcpData = JSON.parse(line.slice(6));
+            break;
+          } catch {
+            // Continue looking for valid JSON
+          }
+        }
+      }
+
+      if (!mcpData) {
+        // Fall back to model response if MCP parsing fails
+        const modelResponse = data.result?.response;
+        return NextResponse.json({
+          source: "model",
+          result: modelResponse ?? "No results returned."
+        });
+      }
+
+      console.log("MCP parsed response:", mcpData);
 
       return NextResponse.json({
         source: "mcp",
