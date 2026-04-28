@@ -159,9 +159,47 @@ export async function POST(request: Request) {
 
       console.log("MCP parsed response:", mcpData);
 
+      // Send MCP result back to model for processing (proper tool calling flow)
+      const toolResultMessage = {
+        role: "tool" as const,
+        content: JSON.stringify(mcpData),
+        tool_call_id: toolCalls[0].name
+      };
+
+      const finalResponse = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: "system", content: systemPromptWithDate },
+              { role: "user", content: prompt },
+              { role: "assistant", content: null, tool_calls: toolCalls },
+              toolResultMessage
+            ],
+          }),
+        },
+      );
+
+      if (!finalResponse.ok) {
+        const modelResponse = data.result?.response;
+        return NextResponse.json({
+          source: "model",
+          result: modelResponse ?? "No results returned."
+        });
+      }
+
+      const finalData = (await finalResponse.json()) as {
+        result?: { response?: string };
+      };
+
       return NextResponse.json({
         source: "mcp",
-        result: mcpData
+        result: finalData.result?.response ?? "No results returned."
       });
     }
 
