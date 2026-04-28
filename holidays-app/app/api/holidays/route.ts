@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
+const MCP_URL = "https://e4840d83-80eb-404a-a27b-de6d313f45b4.search.ai.cloudflare.com/mcp";
 const SYSTEM_PROMPT =
-  "You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary.";
+  "You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations.";
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -33,7 +34,24 @@ export async function POST(request: Request) {
     }
 
     const formattedDate = formatDate(date);
-    const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. No explanations.`;
+    const systemPromptWithDate = `${SYSTEM_PROMPT} Today is ${formattedDate}.`;
+
+    const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the search tool to get verified holiday data when available.`;
+
+    // Define MCP tool for the model to use
+    const tools = [
+      {
+        name: "search",
+        description: "Search for public holidays using the AI Search index. Use when you need verified holiday data from the indexed content.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query for holidays" }
+          },
+          required: ["query"]
+        }
+      }
+    ];
     console.log("Holiday prompt:", prompt);
 
     const response = await fetch(
@@ -48,13 +66,14 @@ export async function POST(request: Request) {
           messages: [
             {
               role: "system",
-              content: SYSTEM_PROMPT,
+              content: systemPromptWithDate,
             },
             {
               role: "user",
               content: prompt,
             },
           ],
+          tools
         }),
       },
     );
@@ -69,11 +88,65 @@ export async function POST(request: Request) {
     const data = (await response.json()) as {
       result?: {
         response?: string;
+        tool_calls?: Array<{
+          name: string;
+          arguments: string;
+        }>;
       };
     };
 
-    return NextResponse.json({ result: data.result?.response ?? "No results returned." });
-  } catch {
+    // Check if model wants to use MCP tool
+    const toolCalls = data.result?.tool_calls;
+
+    if (toolCalls && toolCalls.length > 0) {
+      console.log("Model requested MCP tool:", toolCalls);
+
+      // Model decided to use MCP - call the MCP endpoint
+      const mcpResponse = await fetch(MCP_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/event-stream"
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "search",
+            arguments: {
+              query: `public holidays on ${formattedDate}`
+            }
+          }
+        })
+      });
+
+      if (!mcpResponse.ok) {
+        // Fall back to model response if MCP fails
+        const modelResponse = data.result?.response;
+        return NextResponse.json({
+          source: "model",
+          result: modelResponse ?? "No results returned."
+        });
+      }
+
+      const mcpData = await mcpResponse.json();
+      console.log("MCP response:", mcpData);
+
+      return NextResponse.json({
+        source: "mcp",
+        result: mcpData
+      });
+    }
+
+    // No tool call - use direct model response
+    const modelResponse = data.result?.response;
+    return NextResponse.json({
+      source: "model",
+      result: modelResponse ?? "No results returned."
+    });
+  } catch (error) {
+    console.error("Error:", error);
     return NextResponse.json(
       { error: "Failed to fetch from Cloudflare Workers AI" },
       { status: 500 },
