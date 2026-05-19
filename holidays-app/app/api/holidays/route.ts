@@ -41,14 +41,17 @@ export async function POST(request: Request) {
     // Define MCP tool for the model to use
     const tools = [
       {
-        name: "search",
-        description: "Search for public holidays using the AI Search index. Use when you need verified holiday data from the indexed content.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "Search query for holidays" }
-          },
-          required: ["query"]
+        type: "function",
+        function: {
+          name: "search",
+          description: "Search for public holidays using the AI Search index. Use when you need verified holiday data from the indexed content.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Search query for holidays" }
+            },
+            required: ["query"]
+          }
         }
       }
     ];
@@ -79,8 +82,10 @@ export async function POST(request: Request) {
     );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`AI API Error (${response.status}):`, errorText);
       return NextResponse.json(
-        { error: "Failed to fetch from Cloudflare Workers AI" },
+        { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
         { status: 500 },
       );
     }
@@ -185,8 +190,10 @@ export async function POST(request: Request) {
         },
       );
 
-      console.log("Response:", data);
+      console.log("Final Response status:", finalResponse.status);
       if (!finalResponse.ok) {
+        const errorText = await finalResponse.text();
+        console.error(`AI API Error for final response (${finalResponse.status}):`, errorText);
         const modelResponse = data.result?.response;
         return NextResponse.json({
           source: "model",
@@ -211,9 +218,9 @@ export async function POST(request: Request) {
       result: modelResponse ?? "No results returned."
     });
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error executing POST:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
-      { error: "Failed to fetch from Cloudflare Workers AI" },
+      { error: "Failed to process request" },
       { status: 500 },
     );
   }
