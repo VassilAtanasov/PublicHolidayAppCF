@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
-const MCP_URL = "https://e4840d83-80eb-404a-a27b-de6d313f45b4.search.ai.cloudflare.com/mcp";
+const DEFAULT_MCP_URL = "http://localhost:8787";
 const SYSTEM_PROMPT =
   "You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations.";
 
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
     const apiToken = process.env.CLOUDFLARE_WORKERS_AI_API_TOKEN;
+    const mcpUrl = process.env.MCP_URL || DEFAULT_MCP_URL;
 
     if (!accountId || !apiToken) {
       return NextResponse.json(
@@ -36,27 +37,49 @@ export async function POST(request: Request) {
     const formattedDate = formatDate(date);
     const systemPromptWithDate = `${SYSTEM_PROMPT} Today is ${formattedDate}.`;
 
-    const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the search tool to get verified holiday data when available.`;
+    // 1. Fetch available tools dynamically from the MCP Server using the tools/list RPC
+    let mcpTools: any[] = [];
+    try {
+      console.log(`Fetching tools from MCP server at: ${mcpUrl}`);
+      const listResponse = await fetch(mcpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/list"
+        })
+      });
 
-    // Define MCP tool for the model to use
-    const tools = [
-      {
-        type: "function",
-        function: {
-          name: "search",
-          description: "Search for public holidays using the AI Search index. Use when you need verified holiday data from the indexed content.",
-          parameters: {
-            type: "object",
-            properties: {
-              query: { type: "string", description: "Search query for holidays" }
-            },
-            required: ["query"]
-          }
-        }
+      if (listResponse.ok) {
+        const listData = await listResponse.json() as { result?: { tools?: any[] } };
+        mcpTools = listData.result?.tools || [];
+        console.log(`Discovered ${mcpTools.length} tools from MCP Server`);
+      } else {
+        console.error(`Failed to list tools from MCP server. Status: ${listResponse.status}`);
       }
-    ];
-    console.log("Holiday prompt:", prompt);
+    } catch (err) {
+      console.error("Error communicating with MCP server for tools/list:", err);
+    }
 
+    // 2. Map MCP tools to Cloudflare Workers AI function calling parameters
+    const tools = mcpTools.map(t => ({
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema
+      }
+    }));
+
+    const prompt = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+
+    console.log("Holiday prompt:", prompt);
+    console.log("Sending initial prompt to Cloudflare Workers AI with tools count:", tools.length);
+
+    // 3. Make initial AI request
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
@@ -76,7 +99,7 @@ export async function POST(request: Request) {
               content: prompt,
             },
           ],
-          tools
+          tools: tools.length > 0 ? tools : undefined // Only pass tools if listed successfully
         }),
       },
     );
@@ -95,81 +118,90 @@ export async function POST(request: Request) {
         response?: string;
         tool_calls?: Array<{
           name: string;
-          arguments: string;
+          arguments: string | object;
         }>;
       };
     };
 
-    // Check if model wants to use MCP tool
     const toolCalls = data.result?.tool_calls;
 
+    // 4. Handle tool execution if the AI model wants to use an MCP tool
     if (toolCalls && toolCalls.length > 0) {
-      console.log("Model requested MCP tool:", toolCalls);
+      const toolCall = toolCalls[0];
+      console.log("Model requested MCP tool call:", toolCall);
 
-      // Model decided to use MCP - call the MCP endpoint
-      const mcpResponse = await fetch(MCP_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream"
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "search",
-            arguments: {
-              query: `public holidays on ${formattedDate}`
-            }
-          }
-        })
-      });
-
-      if (!mcpResponse.ok) {
-        // Fall back to model response if MCP fails
-        const modelResponse = data.result?.response;
-        return NextResponse.json({
-          source: "model",
-          result: modelResponse ?? "No results returned."
-        });
+      // Parse arguments if they are returned as string
+      let parsedArgs = {};
+      try {
+        parsedArgs = typeof toolCall.arguments === "string" 
+          ? JSON.parse(toolCall.arguments) 
+          : (toolCall.arguments || {});
+      } catch (err) {
+        console.error("Failed to parse tool call arguments:", err);
       }
 
-      // MCP returns SSE format, need to parse it
-      const mcpText = await mcpResponse.text();
-      console.log("MCP raw response:", mcpText);
+      console.log(`Executing tool "${toolCall.name}" on MCP server with args:`, parsedArgs);
 
-      // Parse SSE format: "data: {...}\n\n"
-      const lines = mcpText.split('\n');
-      let mcpData = null;
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            mcpData = JSON.parse(line.slice(6));
-            break;
-          } catch {
-            // Continue looking for valid JSON
+      // Call the MCP server's tools/call RPC using clean JSON HTTP POST
+      let toolResultText = "";
+      try {
+        const mcpResponse = await fetch(mcpUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: {
+              name: toolCall.name,
+              arguments: parsedArgs
+            }
+          })
+        });
+
+        if (mcpResponse.ok) {
+          const mcpJson = await mcpResponse.json() as {
+            result?: {
+              content?: Array<{ type: string; text: string }>;
+            };
+          };
+          toolResultText = mcpJson.result?.content?.map(c => c.text).join("\n") || "No output from tool.";
+          console.log("MCP tool execution result:", toolResultText);
+        } else {
+          const errText = await mcpResponse.text();
+          console.error(`MCP Server returned error status (${mcpResponse.status}):`, errText);
+          toolResultText = `Error: MCP server failed to execute the tool. Status: ${mcpResponse.status}`;
+        }
+      } catch (err) {
+        console.error("Error communicating with MCP server for tools/call:", err);
+        toolResultText = `Error: Could not communicate with the MCP server to run the tool. ${err instanceof Error ? err.message : ""}`;
+      }
+
+      // Generate a compliant call ID and format the tool call for the final AI call
+      const callId = `call_${toolCall.name}_0`;
+      const formattedToolCalls = [
+        {
+          id: callId,
+          type: "function" as const,
+          function: {
+            name: toolCall.name,
+            arguments: typeof toolCall.arguments === "string" 
+              ? toolCall.arguments 
+              : JSON.stringify(toolCall.arguments)
           }
         }
-      }
+      ];
 
-      if (!mcpData) {
-        // Fall back to model response if MCP parsing fails
-        const modelResponse = data.result?.response;
-        return NextResponse.json({
-          source: "model",
-          result: modelResponse ?? "No results returned."
-        });
-      }
-
-      console.log("MCP parsed response:", mcpData);
-
-      // Send MCP result back to model for processing (proper tool calling flow)
+      // Feed tool result back to the model for final answer generation
       const toolResultMessage = {
         role: "tool" as const,
-        content: JSON.stringify(mcpData),
-        tool_call_id: toolCalls[0].name
+        content: toolResultText,
+        tool_call_id: callId
       };
+
+      console.log("Sending tool result back to Cloudflare Workers AI for final response...");
 
       const finalResponse = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
@@ -183,21 +215,20 @@ export async function POST(request: Request) {
             messages: [
               { role: "system", content: systemPromptWithDate },
               { role: "user", content: prompt },
-              { role: "assistant", content: null, tool_calls: toolCalls },
+              { role: "assistant", content: "", tool_calls: formattedToolCalls },
               toolResultMessage
             ],
           }),
         },
       );
 
-      console.log("Final Response status:", finalResponse.status);
       if (!finalResponse.ok) {
         const errorText = await finalResponse.text();
         console.error(`AI API Error for final response (${finalResponse.status}):`, errorText);
-        const modelResponse = data.result?.response;
+        // Fall back to initial model response if final prompt fails
         return NextResponse.json({
-          source: "model",
-          result: modelResponse ?? "No results returned."
+          source: "model-fallback",
+          result: data.result?.response ?? "No results returned."
         });
       }
 
@@ -211,12 +242,13 @@ export async function POST(request: Request) {
       });
     }
 
-    // No tool call - use direct model response
+    // No tool calls - use direct model response
     const modelResponse = data.result?.response;
     return NextResponse.json({
       source: "model",
       result: modelResponse ?? "No results returned."
     });
+
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
@@ -224,4 +256,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+}
