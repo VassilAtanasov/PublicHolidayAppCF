@@ -133,8 +133,8 @@ export async function POST(request: Request) {
       // Parse arguments if they are returned as string
       let parsedArgs = {};
       try {
-        parsedArgs = typeof toolCall.arguments === "string" 
-          ? JSON.parse(toolCall.arguments) 
+        parsedArgs = typeof toolCall.arguments === "string"
+          ? JSON.parse(toolCall.arguments)
           : (toolCall.arguments || {});
       } catch (err) {
         console.error("Failed to parse tool call arguments:", err);
@@ -187,8 +187,8 @@ export async function POST(request: Request) {
           type: "function" as const,
           function: {
             name: toolCall.name,
-            arguments: typeof toolCall.arguments === "string" 
-              ? toolCall.arguments 
+            arguments: typeof toolCall.arguments === "string"
+              ? toolCall.arguments
               : JSON.stringify(toolCall.arguments)
           }
         }
@@ -256,4 +256,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-}
+}
