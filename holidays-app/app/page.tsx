@@ -10,8 +10,10 @@ function getTodayDate() {
 
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
+  const [aiMode, setAiMode] = useState<"lora" | "mcp">("lora");
   const [result, setResult] = useState("");
-  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "">("");
+  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "">("");
+  const [debugPayload, setDebugPayload] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const hasAutoLoaded = useRef(false);
@@ -28,9 +30,10 @@ export default function Home() {
     setError("");
     setResult("");
     setSource("");
+    setDebugPayload(null);
 
     try {
-      const response = await fetch("/api/holidays", {
+      const response = await fetch(`/api/holidays-${aiMode}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -41,7 +44,8 @@ export default function Home() {
       const data = (await response.json()) as {
         error?: string;
         result?: any;
-        source?: "mcp" | "model" | "model-fallback";
+        source?: "mcp" | "model" | "model-fallback" | "lora";
+        debugPayload?: any;
       };
 
       if (!response.ok) {
@@ -54,6 +58,7 @@ export default function Home() {
 
       setResult(resultString);
       setSource(data.source ?? "");
+      setDebugPayload(data.debugPayload || null);
     } catch (error) {
       console.error("Error:", error);
       setError("Could not check holidays right now." + (error instanceof Error ? ` Details: ${error.message}` : ""));
@@ -104,7 +109,7 @@ export default function Home() {
       <div className="absolute top-[30%] right-[10%] w-[30%] h-[30%] rounded-full bg-purple-500/5 blur-[100px] pointer-events-none" />
 
       <div className="w-full max-w-3xl backdrop-blur-md bg-slate-900/60 border border-slate-800/80 rounded-[2.5rem] p-6 md:p-10 shadow-2xl relative z-10 flex flex-col gap-8 transition-all duration-300">
-        
+
         {/* Header section */}
         <header className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -116,7 +121,7 @@ export default function Home() {
               Llama 3.1 8B Instruct
             </span>
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
             World Public Holidays
           </h1>
@@ -129,10 +134,28 @@ export default function Home() {
         <section className="bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex-1 flex flex-col gap-2">
-              <label htmlFor="holiday-date-input" className="text-sm font-semibold text-slate-300 tracking-wide uppercase">
-                Choose Reference Date
-              </label>
-              
+              <div className="flex justify-between items-center">
+                <label htmlFor="holiday-date-input" className="text-sm font-semibold text-slate-300 tracking-wide uppercase">
+                  Choose Reference Date
+                </label>
+                <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setAiMode("lora")}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "lora" ? "bg-sky-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    LoRA Model
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiMode("mcp")}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "mcp" ? "bg-indigo-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    MCP Worker
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
                 {/* Previous Day Button */}
                 <button
@@ -199,11 +222,10 @@ export default function Home() {
                     setDate(preset.date);
                     void fetchHolidays(preset.date);
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
-                    date === preset.date
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${date === preset.date
                       ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
                       : "bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-200 hover:border-slate-700"
-                  } disabled:opacity-50 disabled:pointer-events-none`}
+                    } disabled:opacity-50 disabled:pointer-events-none`}
                 >
                   {preset.label}
                 </button>
@@ -226,25 +248,29 @@ export default function Home() {
 
             {/* Source Badges */}
             {!loading && source ? (
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                source === "mcp"
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${source === "mcp"
                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                   : source === "model"
-                  ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                  : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  source === "mcp"
+                    ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                    : source === "lora"
+                      ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
                     ? "bg-emerald-400 animate-ping"
                     : source === "model"
-                    ? "bg-purple-400"
-                    : "bg-amber-400"
-                }`} />
+                      ? "bg-purple-400"
+                      : source === "lora"
+                        ? "bg-sky-400"
+                        : "bg-amber-400"
+                  }`} />
                 {source === "mcp"
                   ? "MCP Worker Data Verified"
                   : source === "model"
-                  ? "AI Pretrained Knowledge"
-                  : "AI Model Fallback"}
+                    ? "AI Pretrained Knowledge"
+                    : source === "lora"
+                      ? "LoRA Model Output"
+                      : "AI Model Fallback"}
               </span>
             ) : null}
           </div>
@@ -299,6 +325,28 @@ export default function Home() {
             ) : null}
           </div>
         </section>
+
+        {/* Debug Panel */}
+        {!loading && !error && debugPayload && (
+          <section className="bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-3">
+            <details className="group">
+              <summary className="flex items-center justify-between cursor-pointer list-none">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-600 group-open:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  Model Request Payload (Debug)
+                </h3>
+              </summary>
+              
+              <div className="animate-fade-in mt-4">
+                <pre className="whitespace-pre-wrap font-mono text-xs leading-6 text-slate-400 bg-slate-900/50 p-4 border border-slate-800/80 rounded-2xl overflow-x-auto scrollbar-thin scrollbar-thumb-slate-800 max-h-96">
+                  {JSON.stringify(debugPayload, null, 2)}
+                </pre>
+              </div>
+            </details>
+          </section>
+        )}
 
         {/* Footer info */}
         <footer className="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 border-t border-slate-800/40 pt-6 gap-2">

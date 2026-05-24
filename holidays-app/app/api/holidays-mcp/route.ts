@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
+const MODEL = "@cf/google/gemma-7b-it-lora";
 const DEFAULT_MCP_URL = "http://localhost:8787";
 const SYSTEM_PROMPT =
   "You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations.";
@@ -79,6 +79,20 @@ export async function POST(request: Request) {
     console.log("Holiday prompt:", prompt);
     console.log("Sending initial prompt to Cloudflare Workers AI with tools count:", tools.length);
 
+    const initialPayload = {
+      messages: [
+        {
+          role: "system",
+          content: systemPromptWithDate,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      tools: tools.length > 0 ? tools : undefined // Only pass tools if listed successfully
+    };
+
     // 3. Make initial AI request
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
@@ -88,19 +102,7 @@ export async function POST(request: Request) {
           Authorization: `Bearer ${apiToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "system",
-              content: systemPromptWithDate,
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          tools: tools.length > 0 ? tools : undefined // Only pass tools if listed successfully
-        }),
+        body: JSON.stringify(initialPayload),
       },
     );
 
@@ -203,6 +205,15 @@ export async function POST(request: Request) {
 
       console.log("Sending tool result back to Cloudflare Workers AI for final response...");
 
+      const finalPayload = {
+        messages: [
+          { role: "system", content: systemPromptWithDate },
+          { role: "user", content: prompt },
+          { role: "assistant", content: "", tool_calls: formattedToolCalls },
+          toolResultMessage
+        ],
+      };
+
       const finalResponse = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
         {
@@ -211,24 +222,17 @@ export async function POST(request: Request) {
             Authorization: `Bearer ${apiToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            messages: [
-              { role: "system", content: systemPromptWithDate },
-              { role: "user", content: prompt },
-              { role: "assistant", content: "", tool_calls: formattedToolCalls },
-              toolResultMessage
-            ],
-          }),
+          body: JSON.stringify(finalPayload),
         },
       );
 
       if (!finalResponse.ok) {
         const errorText = await finalResponse.text();
         console.error(`AI API Error for final response (${finalResponse.status}):`, errorText);
-        // Fall back to initial model response if final prompt fails
         return NextResponse.json({
           source: "model-fallback",
-          result: data.result?.response ?? "No results returned."
+          result: data.result?.response ?? "No results returned.",
+          debugPayload: [initialPayload, finalPayload]
         });
       }
 
@@ -238,15 +242,16 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         source: "mcp",
-        result: finalData.result?.response ?? "No results returned."
+        result: finalData.result?.response ?? "No results returned.",
+        debugPayload: [initialPayload, finalPayload]
       });
     }
 
     // No tool calls - use direct model response
-    const modelResponse = data.result?.response;
     return NextResponse.json({
       source: "model",
-      result: modelResponse ?? "No results returned."
+      result: modelResponse ?? "No results returned.",
+      debugPayload: [initialPayload]
     });
 
   } catch (error) {
