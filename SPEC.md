@@ -26,12 +26,16 @@ This is a personal training/learning project. It will be deployed to Cloudflare 
 ```
 holidays-app/
 ├── app/
-│   ├── page.tsx                  # Main UI page
+│   ├── page.tsx                  # Main UI page (selects base, lora, or mcp modes)
 │   ├── layout.tsx                # Root layout
 │   ├── globals.css               # Global styles
 │   └── api/
-│       └── holidays/
-│           └── route.ts          # API route — builds prompt, calls CF Workers AI
+│       ├── holidays-base/
+│       │   └── route.ts          # API route — Base model (@cf/google/gemma-7b-it-lora)
+│       ├── holidays-lora/
+│       │   └── route.ts          # API route — LoRA adapter model (@cf/google/gemma-7b-it-lora + custom lora)
+│       └── holidays-mcp/
+│           └── route.ts          # API route — MCP Worker (@cf/meta/llama-3.1-8b-instruct-fp8-fast + MCP server)
 ├── .env.local                    # Environment variables (not committed)
 ├── .env.example                  # Example env file (committed)
 ├── .gitignore
@@ -62,62 +66,42 @@ The Cloudflare API token needs the **Workers AI** permission. Create it at:
 
 ---
 
-## API Route
+## API Routes
 
-**File:** `app/api/holidays/route.ts`
+The application features three specialized API routes to handle different execution modes selected in the UI:
 
-### Behaviour
-- Accepts `POST` requests with JSON body `{ date: "YYYY-MM-DD" }`
-- Formats the date as a human-readable string (e.g. `"Sunday, April 6, 2025"`)
-- Builds the prompt (see below)
-- Calls Cloudflare Workers AI REST API
-- Returns JSON `{ result: string }`
+### 1. Base Model Route (`app/api/holidays-base/route.ts`)
+- **Model:** `@cf/google/gemma-7b-it-lora`
+- **Behavior:** Queries the base Gemma model directly using standard pretrained general knowledge.
 
-### Edge Runtime
+### 2. LoRA Adapter Route (`app/api/holidays-lora/route.ts`)
+- **Model:** `@cf/google/gemma-7b-it-lora` with custom adapter `my-holiday-lora`.
+- **Behavior:** Queries the fine-tuned holiday adapter for high precision on verified holiday dates without needing external database calls.
+
+### 3. MCP Worker Route (`app/api/holidays-mcp/route.ts`)
+- **Model:** `@cf/meta/llama-3.1-8b-instruct-fp8-fast`
+- **Behavior:** Exposes dynamic holiday lookup by integrating standard MCP (Model Context Protocol) tools over JSON-RPC 2.0.
+  - Dynamically fetches available tools using `tools/list` RPC from the MCP server (running on `http://localhost:8787` by default).
+  - Performs native Worker AI function calling to execute tools (e.g. `get_most_common_holiday`).
+  - Feeds execution results back to Llama 3.1 for verified holiday answers.
+
+### Endpoint Details (MCP Example)
+
+#### Edge Runtime
 ```ts
 export const runtime = "edge";
 ```
 
-### Cloudflare Workers AI endpoint
+#### Cloudflare Workers AI Endpoint
 ```
 POST https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/{MODEL}
 Authorization: Bearer {API_TOKEN}
 Content-Type: application/json
 ```
 
-### Request body sent to CF Workers AI
-```json
-{
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary."
-    },
-    {
-      "role": "user",
-      "content": "<prompt — see below>"
-    }
-  ]
-}
-```
-
-### Prompt template
-```
-Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. No explanations.
-```
-
-Where `formattedDate` is the date formatted as: `"Sunday, April 6, 2025"`
-
-### Response handling
-The CF Workers AI response shape is:
-```json
-{ "result": { "response": "plain text here" } }
-```
-Extract `data.result.response` and return it as `{ result: string }`.
-
-### Error handling
-- If the fetch fails or the response is not OK, return HTTP 500 with `{ error: "Failed to fetch from Cloudflare Workers AI" }`
-- If `data.result.response` is missing, return `{ result: "No results returned." }`
+#### Request / Response schemas are standard Workers AI format:
+- For **MCP mode**, tool definitions matching the MCP tools are appended to the payload.
+- Standard OpenAI-compatible `tool_calls` structure (nested `function.name` / `function.arguments`) is supported.
 
 ---
 

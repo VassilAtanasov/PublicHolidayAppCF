@@ -53,11 +53,10 @@ export async function POST(request: Request) {
           role: "user",
           content: finalUserPrompt,
         },
-      ],
-      lora: "my-holiday-lora"
+      ]
     };
 
-    // Make AI request with LoRA
+    // Make AI request with base model
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
@@ -86,7 +85,7 @@ export async function POST(request: Request) {
     };
 
     return NextResponse.json({
-      source: "lora",
+      source: "base",
       result: data.result?.response ?? "No results returned.",
       request: requestPayload,
       response: data

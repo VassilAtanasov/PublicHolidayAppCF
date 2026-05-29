@@ -8,17 +8,47 @@ function getTodayDate() {
   return new Date(now.getTime() - offset * 60_000).toISOString().split("T")[0];
 }
 
+function formatDate(date: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${date}T00:00:00Z`));
+  } catch (err) {
+    return date;
+  }
+}
+
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
-  const [aiMode, setAiMode] = useState<"lora" | "mcp">("lora");
+  const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp">("base");
   const [result, setResult] = useState("");
-  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "">("");
-  const [debugPayload, setDebugPayload] = useState<any>(null);
+  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "">("");
+  
+  // Prompts states
+  const [systemPrompt, setSystemPrompt] = useState(() => {
+    const formattedDate = formatDate(getTodayDate());
+    return `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formattedDate}.`;
+  });
+  const [userPrompt, setUserPrompt] = useState(() => {
+    const formattedDate = formatDate(getTodayDate());
+    return `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+  });
+
+  const [rawRequest, setRawRequest] = useState<any>(null);
+  const [rawResponse, setRawResponse] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const hasAutoLoaded = useRef(false);
 
-  async function fetchHolidays(selectedDate: string) {
+  async function fetchHolidays(
+    selectedDate: string,
+    customSystemPrompt?: string,
+    customUserPrompt?: string
+  ) {
     if (!selectedDate) {
       setError("Choose a date before checking holidays.");
       setResult("");
@@ -30,7 +60,14 @@ export default function Home() {
     setError("");
     setResult("");
     setSource("");
-    setDebugPayload(null);
+    setRawRequest(null);
+    setRawResponse(null);
+
+    const payload = {
+      date: selectedDate,
+      systemPrompt: customSystemPrompt ?? systemPrompt,
+      userPrompt: customUserPrompt ?? userPrompt,
+    };
 
     try {
       const response = await fetch(`/api/holidays-${aiMode}`, {
@@ -38,18 +75,25 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ date: selectedDate }),
+        body: JSON.stringify(payload),
       });
 
-      const data = (await response.json()) as {
-        error?: string;
-        result?: any;
-        source?: "mcp" | "model" | "model-fallback" | "lora";
-        debugPayload?: any;
-      };
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch (err) {
+        console.error("Failed to parse JSON response:", err);
+      }
+
+      if (data) {
+        setRawRequest(data.request || payload);
+        setRawResponse(data.response || data);
+      } else {
+        setRawRequest(payload);
+      }
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Something went wrong while checking holidays.");
+        throw new Error(data?.error ?? `HTTP ${response.status}: Something went wrong while checking holidays.`);
       }
 
       const resultString = typeof data.result === "object"
@@ -58,7 +102,6 @@ export default function Home() {
 
       setResult(resultString);
       setSource(data.source ?? "");
-      setDebugPayload(data.debugPayload || null);
     } catch (error) {
       console.error("Error:", error);
       setError("Could not check holidays right now." + (error instanceof Error ? ` Details: ${error.message}` : ""));
@@ -73,11 +116,22 @@ export default function Home() {
     }
 
     hasAutoLoaded.current = true;
-    void fetchHolidays(date);
+    void fetchHolidays(date, systemPrompt, userPrompt);
   }, [date]);
 
+  function handleDateChange(newDate: string) {
+    if (!newDate) return;
+    setDate(newDate);
+
+    const formatted = formatDate(newDate);
+    const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
+    const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+    setSystemPrompt(sys);
+    setUserPrompt(usr);
+  }
+
   function handleSubmit() {
-    void fetchHolidays(date);
+    void fetchHolidays(date, systemPrompt, userPrompt);
   }
 
   function changeDate(days: number) {
@@ -88,10 +142,28 @@ export default function Home() {
       current.setUTCDate(current.getUTCDate() + days);
       const newDateStr = current.toISOString().split("T")[0];
       setDate(newDateStr);
-      void fetchHolidays(newDateStr);
+
+      const formatted = formatDate(newDateStr);
+      const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
+      const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+      setSystemPrompt(sys);
+      setUserPrompt(usr);
+
+      void fetchHolidays(newDateStr, sys, usr);
     } catch (err) {
       console.error("Failed to navigate date:", err);
     }
+  }
+
+  function handlePresetClick(presetDate: string) {
+    setDate(presetDate);
+    const formatted = formatDate(presetDate);
+    const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
+    const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+    setSystemPrompt(sys);
+    setUserPrompt(usr);
+
+    void fetchHolidays(presetDate, sys, usr);
   }
 
   const PRESETS = [
@@ -141,6 +213,13 @@ export default function Home() {
                 <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
                   <button
                     type="button"
+                    onClick={() => setAiMode("base")}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "base" ? "bg-slate-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    Base Model
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setAiMode("lora")}
                     className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "lora" ? "bg-sky-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                   >
@@ -175,7 +254,7 @@ export default function Home() {
                   id="holiday-date-input"
                   type="date"
                   value={date}
-                  onChange={(event) => setDate(event.target.value)}
+                  onChange={(event) => handleDateChange(event.target.value)}
                   disabled={loading}
                   className="flex-1 h-12 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-base text-white outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:opacity-60"
                 />
@@ -218,10 +297,7 @@ export default function Home() {
                   key={preset.date}
                   type="button"
                   disabled={loading}
-                  onClick={() => {
-                    setDate(preset.date);
-                    void fetchHolidays(preset.date);
-                  }}
+                  onClick={() => handlePresetClick(preset.date)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${date === preset.date
                       ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
                       : "bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-200 hover:border-slate-700"
@@ -230,6 +306,46 @@ export default function Home() {
                   {preset.label}
                 </button>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Prompts Configuration Section (Editable) */}
+        <section className="bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-4">
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <svg className="w-4.5 h-4.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Prompts Configuration (Editable)
+          </h3>
+          
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="system-prompt-textarea" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                System Prompt
+              </label>
+              <textarea
+                id="system-prompt-textarea"
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                disabled={loading}
+                className="w-full min-h-24 rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs font-mono leading-relaxed text-slate-200 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:opacity-60"
+                placeholder="Enter custom system prompt..."
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="user-prompt-textarea" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                User Prompt
+              </label>
+              <textarea
+                id="user-prompt-textarea"
+                value={userPrompt}
+                onChange={(e) => setUserPrompt(e.target.value)}
+                disabled={loading}
+                className="w-full min-h-32 rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs font-mono leading-relaxed text-slate-200 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:opacity-60"
+                placeholder="Enter custom user prompt..."
+              />
             </div>
           </div>
         </section>
@@ -250,7 +366,7 @@ export default function Home() {
             {!loading && source ? (
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${source === "mcp"
                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                  : source === "model"
+                  : source === "model" || source === "base"
                     ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
                     : source === "lora"
                       ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
@@ -258,7 +374,7 @@ export default function Home() {
                 }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
                     ? "bg-emerald-400 animate-ping"
-                    : source === "model"
+                    : source === "model" || source === "base"
                       ? "bg-purple-400"
                       : source === "lora"
                         ? "bg-sky-400"
@@ -326,27 +442,65 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Debug Panel */}
-        {!loading && !error && debugPayload && (
-          <section className="bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-3">
-            <details className="group">
-              <summary className="flex items-center justify-between cursor-pointer list-none">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-600 group-open:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                  Model Request Payload (Debug)
-                </h3>
-              </summary>
+        {/* Raw Request & Response JSONs (Debug) */}
+        {!loading && (rawRequest || rawResponse) && (() => {
+          const toolMessage = rawRequest?.messages?.find((m: any) => m.role === "tool");
+          const toolResponseContent = toolMessage?.content;
+          
+          return (
+            <section className="w-full bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-4">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <svg className="w-4.5 h-4.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                Raw Model Request, Tool Execution & Response Debugger
+              </h3>
               
-              <div className="animate-fade-in mt-4">
-                <pre className="whitespace-pre-wrap font-mono text-xs leading-6 text-slate-400 bg-slate-900/50 p-4 border border-slate-800/80 rounded-2xl overflow-x-auto scrollbar-thin scrollbar-thumb-slate-800 max-h-96">
-                  {JSON.stringify(debugPayload, null, 2)}
-                </pre>
+              <div className={`grid grid-cols-1 ${toolResponseContent ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
+                {/* Request JSON */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Raw Request JSON
+                  </label>
+                  <pre
+                    id="raw-request-json"
+                    className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
+                  >
+                    {rawRequest ? JSON.stringify(rawRequest, null, 2) : "No request payload"}
+                  </pre>
+                </div>
+
+                {/* Tool Response Column (only if tool response exists) */}
+                {toolResponseContent && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+                      MCP Tool Response Output
+                    </label>
+                    <pre
+                      id="mcp-tool-response"
+                      className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-emerald-300 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
+                    >
+                      {toolResponseContent}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Response JSON */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Raw Response JSON
+                  </label>
+                  <pre
+                    id="raw-response-json"
+                    className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
+                  >
+                    {rawResponse ? JSON.stringify(rawResponse, null, 2) : "No response payload"}
+                  </pre>
+                </div>
               </div>
-            </details>
-          </section>
-        )}
+            </section>
+          );
+        })()}
 
         {/* Footer info */}
         <footer className="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 border-t border-slate-800/40 pt-6 gap-2">
