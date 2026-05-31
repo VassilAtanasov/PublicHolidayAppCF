@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+holidays-app/holidays-vectors.ndjson
+
+# wrangler
+.wrangler/
+.wrangler/tmp/
+holidays-app/.wrangler/
+holidays-app/.wrangler/tmp/

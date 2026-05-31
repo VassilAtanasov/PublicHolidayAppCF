@@ -20,5 +20,15 @@
       "binding": "WORKER_SELF_REFERENCE",
       "service": "holidays-app"
     }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "vectorize": [
+    {
+      "binding": "VECTORIZE_INDEX",
+      "index_name": "holidays-rag-index",
+      "remote": true
+    }
   ]
 }
