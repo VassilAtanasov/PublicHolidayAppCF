@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {};
 
-initOpenNextCloudflareForDev();
+initOpenNextCloudflareForDev({
+  experimental: {
+    remoteBindings: true
+  }
+});
 
 export default nextConfig;

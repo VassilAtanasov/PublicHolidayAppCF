@@ -22,20 +22,142 @@ function formatDate(date: string) {
   }
 }
 
+// MarkdownRenderer is a lightweight utility component to render standard Markdown (headings, bold, bullets, list numbers, blockquotes) natively.
+function MarkdownRenderer({ content }: { content: string }) {
+  if (!content) return null;
+
+  const lines = content.split("\n");
+
+  return (
+    <div className="space-y-3 text-slate-350 font-sans text-sm leading-relaxed text-left">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+
+        // 1. Headings (### or ## or #)
+        if (trimmed.startsWith("### ")) {
+          return (
+            <h4 key={idx} className="text-base font-bold text-teal-400 mt-4 mb-2 tracking-wide uppercase">
+              {renderInlineStyles(trimmed.slice(4))}
+            </h4>
+          );
+        }
+        if (trimmed.startsWith("## ")) {
+          return (
+            <h3 key={idx} className="text-lg font-bold text-sky-400 mt-5 mb-2 border-b border-slate-900 pb-1">
+              {renderInlineStyles(trimmed.slice(3))}
+            </h3>
+          );
+        }
+        if (trimmed.startsWith("# ")) {
+          return (
+            <h2 key={idx} className="text-xl font-extrabold text-white mt-6 mb-3 bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+              {renderInlineStyles(trimmed.slice(2))}
+            </h2>
+          );
+        }
+
+        // 2. Unordered lists (- or * or •)
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("• ")) {
+          return (
+            <ul key={idx} className="list-disc pl-5 space-y-1 my-1">
+              <li className="text-slate-350">
+                {renderInlineStyles(trimmed.slice(2))}
+              </li>
+            </ul>
+          );
+        }
+
+        // 3. Numbered lists (e.g. 1. )
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numMatch) {
+          return (
+            <ol key={idx} className="list-decimal pl-5 space-y-1 my-1" start={parseInt(numMatch[1])}>
+              <li className="text-slate-350">
+                {renderInlineStyles(numMatch[2])}
+              </li>
+            </ol>
+          );
+        }
+
+        // 4. Blockquotes
+        if (trimmed.startsWith("> ")) {
+          return (
+            <blockquote key={idx} className="border-l-4 border-teal-500 pl-4 py-1 my-2 bg-slate-950/40 rounded-r-xl italic text-slate-400">
+              {renderInlineStyles(trimmed.slice(2))}
+            </blockquote>
+          );
+        }
+
+        // 5. Empty line
+        if (trimmed === "") {
+          return <div key={idx} className="h-2" />;
+        }
+
+        // 6. Regular paragraph
+        return (
+          <p key={idx} className="text-slate-350 my-1">
+            {renderInlineStyles(line)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInlineStyles(text: string) {
+  if (!text) return "";
+
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+
+  return parts.map((part, idx) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={idx} className="font-bold text-white">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={idx} className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-sky-300 font-mono text-xs">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
-  const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp">("base");
+  const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp" | "rag">("base");
   const [result, setResult] = useState("");
-  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "">("");
+  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "">("");
 
   // Prompts states
   const [systemPrompt, setSystemPrompt] = useState(() => {
-    const formattedDate = formatDate(getTodayDate());
-    return `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formattedDate}.`;
+    const formatted = formatDate(getTodayDate());
+    return `You are a precise world holiday reference. Return only what is asked. Return Markdown. No extra commentary. No explanations. Today is ${formatted}.Always put United States holidays first (if any). Group by holiday name with countries in bullet list, ordered by popularity.`;
   });
   const [userPrompt, setUserPrompt] = useState(() => {
-    const formattedDate = formatDate(getTodayDate());
-    return `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+    const formatted = formatDate(getTodayDate());
+    return `List national public holidays (off work) on ${formatted} worldwide. Verify it is a non-working day in the country.`;
+  });
+
+  const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag", string>>(() => {
+    const formatted = formatDate(getTodayDate());
+    const standardSys = `You are a precise world holiday reference. Return only what is asked. Return Markdown. No extra commentary. No explanations. Today is ${formatted}.Always put United States holidays first (if any). Group by holiday name with countries in bullet list, ordered by popularity.`;
+    return {
+      base: standardSys,
+      lora: standardSys,
+      mcp: `${standardSys} Use the appropriate holiday lookup tools to get verified holiday data when available.`,
+      rag: `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Today is ${formatted}.`,
+    };
+  });
+
+  const [executionCache, setExecutionCache] = useState<Record<"base" | "lora" | "mcp" | "rag", {
+    result: string;
+    source: "mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "";
+    rawRequest: any;
+    rawResponse: any;
+    error: string;
+  }>>({
+    base: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
+    lora: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
+    mcp: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
+    rag: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
   });
 
   const [rawRequest, setRawRequest] = useState<any>(null);
@@ -43,6 +165,50 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const hasAutoLoaded = useRef(false);
+
+  function updatePromptsForDate(prevDateStr: string, newDateStr: string) {
+    const prevFormatted = formatDate(prevDateStr);
+    const newFormatted = formatDate(newDateStr);
+
+    // Update the system prompts cache for each mode
+    setSystemPrompts(prevMap => {
+      const nextMap = { ...prevMap };
+      for (const mode of Object.keys(nextMap) as Array<keyof typeof nextMap>) {
+        nextMap[mode] = nextMap[mode].replaceAll(prevFormatted, newFormatted);
+      }
+      return nextMap;
+    });
+
+    // Update the active system prompt
+    setSystemPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
+
+    // Update the shared user prompt
+    setUserPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
+  }
+
+  function handleAiModeChange(newMode: "base" | "lora" | "mcp" | "rag") {
+    // 1. Save current active system prompt & execution details into the cache of the OLD mode
+    setSystemPrompts(prev => ({
+      ...prev,
+      [aiMode]: systemPrompt
+    }));
+
+    setExecutionCache(prev => ({
+      ...prev,
+      [aiMode]: { result, source, rawRequest, rawResponse, error }
+    }));
+
+    // 2. Load system prompt & execution details from the cache of the NEW mode
+    setAiMode(newMode);
+    setSystemPrompt(systemPrompts[newMode]);
+
+    const cached = executionCache[newMode];
+    setResult(cached.result);
+    setSource(cached.source);
+    setRawRequest(cached.rawRequest);
+    setRawResponse(cached.rawResponse);
+    setError(cached.error);
+  }
 
   async function fetchHolidays(
     selectedDate: string,
@@ -102,9 +268,35 @@ export default function Home() {
 
       setResult(resultString);
       setSource(data.source ?? "");
+
+      // Cache this execution
+      setExecutionCache(prev => ({
+        ...prev,
+        [aiMode]: {
+          result: resultString,
+          source: data.source ?? "",
+          rawRequest: data.request || payload,
+          rawResponse: data.response || data,
+          error: ""
+        }
+      }));
+
     } catch (error) {
       console.error("Error:", error);
-      setError("Could not check holidays right now." + (error instanceof Error ? ` Details: ${error.message}` : ""));
+      const errMessage = "Could not check holidays right now." + (error instanceof Error ? ` Details: ${error.message}` : "");
+      setError(errMessage);
+
+      // Cache this error
+      setExecutionCache(prev => ({
+        ...prev,
+        [aiMode]: {
+          result: "",
+          source: "",
+          rawRequest: payload,
+          rawResponse: null,
+          error: errMessage
+        }
+      }));
     } finally {
       setLoading(false);
     }
@@ -112,13 +304,8 @@ export default function Home() {
 
   function handleDateChange(newDate: string) {
     if (!newDate) return;
+    updatePromptsForDate(date, newDate);
     setDate(newDate);
-
-    const formatted = formatDate(newDate);
-    const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
-    const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
-    setSystemPrompt(sys);
-    setUserPrompt(usr);
   }
 
   function handleSubmit() {
@@ -132,25 +319,17 @@ export default function Home() {
       if (isNaN(current.getTime())) return;
       current.setUTCDate(current.getUTCDate() + days);
       const newDateStr = current.toISOString().split("T")[0];
+      
+      updatePromptsForDate(date, newDateStr);
       setDate(newDateStr);
-
-      const formatted = formatDate(newDateStr);
-      const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
-      const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
-      setSystemPrompt(sys);
-      setUserPrompt(usr);
     } catch (err) {
       console.error("Failed to navigate date:", err);
     }
   }
 
   function handlePresetClick(presetDate: string) {
+    updatePromptsForDate(date, presetDate);
     setDate(presetDate);
-    const formatted = formatDate(presetDate);
-    const sys = `You are a precise world holiday reference. Return only what is asked. No markdown, no extra commentary. No explanations. Today is ${formatted}.`;
-    const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
-    setSystemPrompt(sys);
-    setUserPrompt(usr);
   }
 
   const PRESETS = [
@@ -200,24 +379,31 @@ export default function Home() {
                 <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
                   <button
                     type="button"
-                    onClick={() => setAiMode("base")}
+                    onClick={() => handleAiModeChange("base")}
                     className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "base" ? "bg-slate-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                   >
                     Base Model
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAiMode("lora")}
+                    onClick={() => handleAiModeChange("lora")}
                     className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "lora" ? "bg-sky-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                   >
                     LoRA Model
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAiMode("mcp")}
+                    onClick={() => handleAiModeChange("mcp")}
                     className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "mcp" ? "bg-indigo-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                   >
                     MCP Worker
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAiModeChange("rag")}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "rag" ? "bg-teal-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    RAG Search
                   </button>
                 </div>
               </div>
@@ -228,7 +414,7 @@ export default function Home() {
                   id="prev-day-btn"
                   type="button"
                   onClick={() => changeDate(-1)}
-                  disabled={loading}
+                  disabled={loading || aiMode === "rag"}
                   className="flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-850 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition"
                   aria-label="Previous Day"
                 >
@@ -242,8 +428,8 @@ export default function Home() {
                   type="date"
                   value={date}
                   onChange={(event) => handleDateChange(event.target.value)}
-                  disabled={loading}
-                  className="flex-1 h-12 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-base text-white outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:opacity-60"
+                  disabled={loading || aiMode === "rag"}
+                  className="flex-1 h-12 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-base text-white outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:opacity-60 disabled:pointer-events-none"
                 />
 
                 {/* Next Day Button */}
@@ -251,7 +437,7 @@ export default function Home() {
                   id="next-day-btn"
                   type="button"
                   onClick={() => changeDate(1)}
-                  disabled={loading}
+                  disabled={loading || aiMode === "rag"}
                   className="flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-850 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition"
                   aria-label="Next Day"
                 >
@@ -357,7 +543,9 @@ export default function Home() {
                   ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
                   : source === "lora"
                     ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-                    : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                    : source === "rag"
+                      ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                 }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
                   ? "bg-emerald-400 animate-ping"
@@ -365,20 +553,23 @@ export default function Home() {
                     ? "bg-purple-400"
                     : source === "lora"
                       ? "bg-sky-400"
-                      : "bg-amber-400"
+                      : source === "rag"
+                        ? "bg-teal-400"
+                        : "bg-amber-400"
                   }`} />
                 {source === "mcp"
                   ? "MCP Worker Data Verified"
-                  : source === "model"
+                  : source === "model" || source === "base"
                     ? "AI Pretrained Knowledge"
                     : source === "lora"
                       ? "LoRA Model Output"
-                      : "AI Model Fallback"}
+                      : source === "rag"
+                        ? "Vector-RAG Knowledge"
+                        : "AI Model Fallback"}
               </span>
             ) : null}
           </div>
 
-          {/* Body Content */}
           <div className="flex-1 flex flex-col justify-center">
             {loading ? (
               <div className="space-y-4 py-4">
@@ -405,9 +596,9 @@ export default function Home() {
 
             {!loading && !error && result ? (
               <div className="animate-fade-in py-1">
-                <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-350 bg-slate-900/30 p-4 border border-slate-900/80 rounded-2xl overflow-x-auto max-h-[30rem] scrollbar-thin scrollbar-thumb-slate-800">
-                  {result}
-                </pre>
+                <div className="text-slate-350 bg-slate-900/30 p-6 border border-slate-900/80 rounded-3xl overflow-x-auto max-h-[30rem] scrollbar-thin scrollbar-thumb-slate-800 shadow-inner">
+                  <MarkdownRenderer content={result} />
+                </div>
               </div>
             ) : null}
 
@@ -433,6 +624,11 @@ export default function Home() {
         {!loading && (rawRequest || rawResponse) && (() => {
           const toolMessage = rawRequest?.messages?.find((m: any) => m.role === "tool");
           const toolResponseContent = toolMessage?.content;
+          const isRagMode = aiMode === "rag";
+          const ragMetadata = rawResponse?.extracted_metadata;
+          const ragVectorResults = rawResponse?.vector_search_results;
+          const hasRagDetails = isRagMode && (ragMetadata || ragVectorResults);
+          const showThirdColumn = toolResponseContent || hasRagDetails;
 
           return (
             <section className="w-full bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-4">
@@ -443,7 +639,7 @@ export default function Home() {
                 Raw Model Request, Tool Execution & Response Debugger
               </h3>
 
-              <div className={`grid grid-cols-1 ${toolResponseContent ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
+              <div className={`grid grid-cols-1 ${showThirdColumn ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
                 {/* Request JSON */}
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -484,6 +680,39 @@ export default function Home() {
                     {rawResponse ? JSON.stringify(rawResponse, null, 2) : "No response payload"}
                   </pre>
                 </div>
+
+                {/* RAG Search Details Column (only if in RAG mode) */}
+                {hasRagDetails && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-teal-400 uppercase tracking-wider">
+                      RAG Vector Matches & Extracted Metadata
+                    </label>
+                    <div className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent space-y-4">
+                      {ragMetadata && (
+                        <div>
+                          <div className="text-teal-400 font-bold mb-1">// Extracted Search Criteria</div>
+                          <pre className="text-slate-300 whitespace-pre-wrap">{JSON.stringify(ragMetadata, null, 2)}</pre>
+                        </div>
+                      )}
+                      {ragVectorResults && ragVectorResults.length > 0 && (
+                        <div>
+                          <div className="text-teal-400 font-bold mb-1">// Vector search matched documents ({ragVectorResults.length})</div>
+                          <div className="space-y-2 mt-2">
+                            {ragVectorResults.map((m: any, idx: number) => (
+                              <div key={m.id || idx} className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                <div className="text-slate-200 font-semibold truncate" title={m.id}>{m.id}</div>
+                                <div className="flex justify-between text-[10px] mt-1 text-slate-500">
+                                  <span>Score: {m.score?.toFixed(4)}</span>
+                                  {m.metadata?.date && <span>Date: {m.metadata.date}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           );
