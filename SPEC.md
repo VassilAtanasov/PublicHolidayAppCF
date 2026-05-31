@@ -75,7 +75,7 @@ The application features three specialized API routes to handle different execut
 - **Behavior:** Queries the base Gemma model directly using standard pretrained general knowledge.
 
 ### 2. LoRA Adapter Route (`app/api/holidays-lora/route.ts`)
-- **Model:** `@cf/google/gemma-7b-it-lora` with custom adapter `my-holiday-lora`.
+- **Model:** `@cf/google/gemma-7b-it-lora` with custom adapter `gemma-holiday-lora`.
 - **Behavior:** Queries the fine-tuned holiday adapter for high precision on verified holiday dates without needing external database calls.
 
 ### 3. MCP Worker Route (`app/api/holidays-mcp/route.ts`)

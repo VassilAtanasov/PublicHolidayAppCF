@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
     // 4. Handle tool execution if the AI model wants to use an MCP tool
     if (toolCalls && toolCalls.length > 0) {
-      const toolCall = toolCalls[0];
+      const toolCall = toolCalls[0] as any;
       console.log("Model requested MCP tool call:", toolCall);
 
       // Support both flat toolCall (older spec) and nested function toolCall (OpenAI/Llama standard)

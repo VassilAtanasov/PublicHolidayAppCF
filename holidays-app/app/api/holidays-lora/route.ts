@@ -54,7 +54,7 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      lora: "my-holiday-lora"
+      lora: "191db215-bb74-4eec-a4d4-92ad69b48012"
     };
 
     // Make AI request with LoRA

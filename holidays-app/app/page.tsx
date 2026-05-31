@@ -27,7 +27,7 @@ export default function Home() {
   const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp">("base");
   const [result, setResult] = useState("");
   const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "">("");
-  
+
   // Prompts states
   const [systemPrompt, setSystemPrompt] = useState(() => {
     const formattedDate = formatDate(getTodayDate());
@@ -110,15 +110,6 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    if (!date || hasAutoLoaded.current) {
-      return;
-    }
-
-    hasAutoLoaded.current = true;
-    void fetchHolidays(date, systemPrompt, userPrompt);
-  }, [date]);
-
   function handleDateChange(newDate: string) {
     if (!newDate) return;
     setDate(newDate);
@@ -148,8 +139,6 @@ export default function Home() {
       const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
       setSystemPrompt(sys);
       setUserPrompt(usr);
-
-      void fetchHolidays(newDateStr, sys, usr);
     } catch (err) {
       console.error("Failed to navigate date:", err);
     }
@@ -162,8 +151,6 @@ export default function Home() {
     const usr = `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formatted} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
     setSystemPrompt(sys);
     setUserPrompt(usr);
-
-    void fetchHolidays(presetDate, sys, usr);
   }
 
   const PRESETS = [
@@ -180,7 +167,7 @@ export default function Home() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute top-[30%] right-[10%] w-[30%] h-[30%] rounded-full bg-purple-500/5 blur-[100px] pointer-events-none" />
 
-      <div className="w-full max-w-3xl backdrop-blur-md bg-slate-900/60 border border-slate-800/80 rounded-[2.5rem] p-6 md:p-10 shadow-2xl relative z-10 flex flex-col gap-8 transition-all duration-300">
+      <div className="w-full max-w-3xl lg:max-w-none lg:w-[90%] xl:w-[95%] backdrop-blur-md bg-slate-900/60 border border-slate-800/80 rounded-[2.5rem] p-6 md:p-10 shadow-2xl relative z-10 flex flex-col gap-8 transition-all duration-300">
 
         {/* Header section */}
         <header className="space-y-4">
@@ -299,8 +286,8 @@ export default function Home() {
                   disabled={loading}
                   onClick={() => handlePresetClick(preset.date)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${date === preset.date
-                      ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
-                      : "bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-200 hover:border-slate-700"
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                    : "bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-200 hover:border-slate-700"
                     } disabled:opacity-50 disabled:pointer-events-none`}
                 >
                   {preset.label}
@@ -318,7 +305,7 @@ export default function Home() {
             </svg>
             Prompts Configuration (Editable)
           </h3>
-          
+
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <label htmlFor="system-prompt-textarea" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -365,20 +352,20 @@ export default function Home() {
             {/* Source Badges */}
             {!loading && source ? (
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${source === "mcp"
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                  : source === "model" || source === "base"
-                    ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                    : source === "lora"
-                      ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                : source === "model" || source === "base"
+                  ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                  : source === "lora"
+                    ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                    : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                 }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
-                    ? "bg-emerald-400 animate-ping"
-                    : source === "model" || source === "base"
-                      ? "bg-purple-400"
-                      : source === "lora"
-                        ? "bg-sky-400"
-                        : "bg-amber-400"
+                  ? "bg-emerald-400 animate-ping"
+                  : source === "model" || source === "base"
+                    ? "bg-purple-400"
+                    : source === "lora"
+                      ? "bg-sky-400"
+                      : "bg-amber-400"
                   }`} />
                 {source === "mcp"
                   ? "MCP Worker Data Verified"
@@ -399,7 +386,7 @@ export default function Home() {
                 <div className="h-4 bg-slate-900 rounded animate-pulse w-5/6" />
                 <div className="h-4 bg-slate-900 rounded animate-pulse w-2/3" />
                 <p className="text-sm text-slate-500 text-center animate-pulse pt-2">
-                  Llama is discovering and calling MCP server tools...
+                  LLM model processing your query...
                 </p>
               </div>
             ) : null}
@@ -446,7 +433,7 @@ export default function Home() {
         {!loading && (rawRequest || rawResponse) && (() => {
           const toolMessage = rawRequest?.messages?.find((m: any) => m.role === "tool");
           const toolResponseContent = toolMessage?.content;
-          
+
           return (
             <section className="w-full bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-4">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -455,7 +442,7 @@ export default function Home() {
                 </svg>
                 Raw Model Request, Tool Execution & Response Debugger
               </h3>
-              
+
               <div className={`grid grid-cols-1 ${toolResponseContent ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
                 {/* Request JSON */}
                 <div className="flex flex-col gap-2">
