@@ -9,7 +9,7 @@ const VECTORIZE_INDEX_NAME = "holidays-rag-index";
 
 export async function POST(request: Request) {
   try {
-    const { userPrompt } = (await request.json()) as { userPrompt?: string; };
+    const { userPrompt, systemPrompt } = (await request.json()) as { userPrompt?: string; systemPrompt?: string; };
 
     if (!userPrompt) {
       return NextResponse.json({ error: "userPrompt is required." }, { status: 400 });
@@ -218,7 +218,7 @@ Example JSON output: {"semantic_query": "spooky holiday", "start_date": "2026-10
 
     // Step 4: Final Synthesized Answer
     console.log("Step 4: Synthesizing final answer...");
-    const synthesisSystemPrompt = `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Do not hallucinate holidays not listed in the context. If the context is empty or doesn't answer the question, say so.`;
+    const synthesisSystemPrompt = systemPrompt || `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Do not hallucinate holidays not listed in the context. If the context is empty or doesn't answer the question, say so.`;
     const synthesisUserPrompt = `User question: "${userPrompt}"\n\nRetrieved Holiday Context:\n${retrievedContext ? retrievedContext : "No holidays matched."}\n\nPlease provide a clear, concise answer.`;
 
     const synthesisRes = await fetch(

@@ -133,7 +133,7 @@ export default function Home() {
   });
   const [userPrompt, setUserPrompt] = useState(() => {
     const formatted = formatDate(getTodayDate());
-    return `List national public holidays (off work) on ${formatted} worldwide. Verify it is a non-working day in the country.`;
+    return `List national public holidays (off work) on ${formatted} worldwide.`;
   });
 
   const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag", string>>(() => {
@@ -143,7 +143,7 @@ export default function Home() {
       base: standardSys,
       lora: standardSys,
       mcp: `${standardSys} Use the appropriate holiday lookup tools to get verified holiday data when available.`,
-      rag: `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Today is ${formatted}.`,
+      rag: `${standardSys} Answer the user's question using ONLY the provided holiday context retrieved from our database.`,
     };
   });
 
@@ -319,7 +319,7 @@ export default function Home() {
       if (isNaN(current.getTime())) return;
       current.setUTCDate(current.getUTCDate() + days);
       const newDateStr = current.toISOString().split("T")[0];
-      
+
       updatePromptsForDate(date, newDateStr);
       setDate(newDateStr);
     } catch (err) {
