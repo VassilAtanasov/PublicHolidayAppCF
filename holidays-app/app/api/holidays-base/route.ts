@@ -53,7 +53,9 @@ export async function POST(request: Request) {
           role: "user",
           content: finalUserPrompt,
         },
-      ]
+      ],
+      temperature: 0.0, // Force absolute determinism
+      top_p: 0.1
     };
 
     // Make AI request with base model

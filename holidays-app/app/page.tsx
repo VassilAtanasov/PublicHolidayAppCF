@@ -129,7 +129,7 @@ RULES:
 3. Group holidays by name, then list affected countries as bullet points under each holiday
 4. Within each holiday group, order countries by population (largest first)
 5. For holidays unique to one country, list the holiday name with the country as a single bullet
-6. If no national public holidays exist for the date, return exactly: "No national public holidays found for this date."
+6. Do not hallucinate! If no national public holidays exist for the date, return exactly: "No national public holidays found for this date."
 7. Use this format:
 
 ## [Holiday Name]
@@ -166,12 +166,11 @@ export default function Home() {
 
   const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag", string>>(() => {
     const formatted = formatDate(getTodayDate());
-    const ragSystemPrompt = `You are a precise world holiday reference. Return only what is asked. Return Markdown. No extra commentary. No explanations. Today is ${formatted}.Always put United States holidays first (if any). Group by holiday name with countries in bullet list, ordered by popularity.`;
     return {
       base: buildSystemPrompt(formatted),
       lora: buildSystemPrompt(formatted),
-      mcp: buildSystemPrompt(formatted, "Use the appropriate holiday lookup tools to get verified holiday data when available."),
-      rag: ragSystemPrompt,
+      mcp: buildSystemPrompt(formatted),
+      rag: buildSystemPrompt(formatted),
     };
   });
 
