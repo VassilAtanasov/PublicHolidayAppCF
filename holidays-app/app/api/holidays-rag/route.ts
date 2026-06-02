@@ -31,17 +31,28 @@ export async function POST(request: Request) {
     // We want the LLM to output ONLY a JSON object.
     const extractionSystemPrompt = `You are an expert query parser. Given a user's question about holidays, extract the search criteria into a strict JSON object.
 Return ONLY valid JSON and absolutely nothing else. No markdown formatting, no backticks.
-The JSON must have this exact schema:
+
+RULES:
+1. "semantic_query": Extract the core keyword/theme of the search (e.g., "spooky", "spring festival", "independence"). If they simply ask for "public holidays" or "holidays" without a theme, use "public holiday".
+2. "start_date" & "end_date": Calculate the search date boundaries in "YYYY-MM-DD" format:
+   - For a single specific date (e.g., "June 2, 2026" or "June 2nd"): set both "start_date" and "end_date" to that exact day (e.g., "2026-06-02").
+   - For a month (e.g., "October"): set "start_date" to the 1st of that month ("2026-10-01") and "end_date" to the last day ("2026-10-31").
+   - If no specific date/month is requested, default "start_date" to "2026-01-01" and "end_date" to "2026-12-31".
+3. "countries": An array of full English country names (e.g., ["United States", "Italy"]). If the query says "worldwide", "all countries", or doesn't mention any country, return an empty array [].
+
+Schema format:
 {
-  "semantic_query": "The core thematic part of the query (e.g. 'spooky', 'spring festival', 'independence'). If they just ask for a date, put 'public holiday'.",
-  "start_date": "2026-01-01", // Earliest matching date in YYYY-MM-DD format
-  "end_date": "2026-12-31",   // Latest matching date in YYYY-MM-DD format
-  "countries": ["United States"] // Array of country names, or empty array [] if worldwide
+  "semantic_query": "string",
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD",
+  "countries": ["string"]
 }
 
-Assume the current year is 2026 if not specified.
 Example user query: "Are there any spooky holidays in the US in October?"
-Example JSON output: {"semantic_query": "spooky holiday", "start_date": "2026-10-01", "end_date": "2026-10-31", "countries": ["United States"]}`;
+Example JSON output: {"semantic_query": "spooky", "start_date": "2026-10-01", "end_date": "2026-10-31", "countries": ["United States"]}
+
+Example user query: "List national public holidays on Tuesday, June 2, 2026 worldwide."
+Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06-02", "end_date": "2026-06-02", "countries": []}`;
 
     const extractionRes = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${LLM_MODEL}`,
@@ -102,7 +113,7 @@ Example JSON output: {"semantic_query": "spooky holiday", "start_date": "2026-10
               if (promptLower.includes(m)) {
                 const monthIndex = months.indexOf(m) % 12;
                 const monthNum = String(monthIndex + 1).padStart(2, "0");
-                
+
                 const pattern1 = new RegExp(`${m}\\s+(\\d{1,2})\\D+(\\d{4})`, "i");
                 const match1 = userPrompt.match(pattern1);
                 if (match1) {
@@ -111,7 +122,7 @@ Example JSON output: {"semantic_query": "spooky holiday", "start_date": "2026-10
                   extractedDate = `${yearNum}-${monthNum}-${dayNum}`;
                   break;
                 }
-                
+
                 const pattern2 = new RegExp(`(\\d{1,2})\\s+${m}\\D+(\\d{4})`, "i");
                 const match2 = userPrompt.match(pattern2);
                 if (match2) {
