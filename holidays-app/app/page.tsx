@@ -150,9 +150,9 @@ Today is ${formattedDate}.`;
 
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
-  const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp" | "rag">("base");
+  const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp" | "rag" | "reasoning">("base");
   const [result, setResult] = useState("");
-  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "">("");
+  const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "reasoning" | "">("");
 
   // Prompts states
   const [systemPrompt, setSystemPrompt] = useState(() => {
@@ -164,31 +164,35 @@ export default function Home() {
     return `List national public holidays (off work) on ${formatted} worldwide.`;
   });
 
-  const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag", string>>(() => {
+  const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag" | "reasoning", string>>(() => {
     const formatted = formatDate(getTodayDate());
     return {
       base: buildSystemPrompt(formatted),
       lora: buildSystemPrompt(formatted),
       mcp: buildSystemPrompt(formatted),
       rag: buildSystemPrompt(formatted),
+      reasoning: buildSystemPrompt(formatted),
     };
   });
 
-  const [executionCache, setExecutionCache] = useState<Record<"base" | "lora" | "mcp" | "rag", {
+  const [executionCache, setExecutionCache] = useState<Record<"base" | "lora" | "mcp" | "rag" | "reasoning", {
     result: string;
-    source: "mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "";
+    source: "mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "reasoning" | "";
     rawRequest: any;
     rawResponse: any;
+    reasoning: string | null;
     error: string;
   }>>({
-    base: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
-    lora: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
-    mcp: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
-    rag: { result: "", source: "", rawRequest: null, rawResponse: null, error: "" },
+    base: { result: "", source: "", rawRequest: null, rawResponse: null, reasoning: null, error: "" },
+    lora: { result: "", source: "", rawRequest: null, rawResponse: null, reasoning: null, error: "" },
+    mcp: { result: "", source: "", rawRequest: null, rawResponse: null, reasoning: null, error: "" },
+    rag: { result: "", source: "", rawRequest: null, rawResponse: null, reasoning: null, error: "" },
+    reasoning: { result: "", source: "", rawRequest: null, rawResponse: null, reasoning: null, error: "" },
   });
 
   const [rawRequest, setRawRequest] = useState<any>(null);
   const [rawResponse, setRawResponse] = useState<any>(null);
+  const [reasoningOutput, setReasoningOutput] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const hasAutoLoaded = useRef(false);
@@ -213,7 +217,7 @@ export default function Home() {
     setUserPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
   }
 
-  function handleAiModeChange(newMode: "base" | "lora" | "mcp" | "rag") {
+  function handleAiModeChange(newMode: "base" | "lora" | "mcp" | "rag" | "reasoning") {
     // 1. Save current active system prompt & execution details into the cache of the OLD mode
     setSystemPrompts(prev => ({
       ...prev,
@@ -222,7 +226,7 @@ export default function Home() {
 
     setExecutionCache(prev => ({
       ...prev,
-      [aiMode]: { result, source, rawRequest, rawResponse, error }
+      [aiMode]: { result, source, rawRequest, rawResponse, reasoning: reasoningOutput, error }
     }));
 
     // 2. Load system prompt & execution details from the cache of the NEW mode
@@ -234,6 +238,7 @@ export default function Home() {
     setSource(cached.source);
     setRawRequest(cached.rawRequest);
     setRawResponse(cached.rawResponse);
+    setReasoningOutput(cached.reasoning);
     setError(cached.error);
   }
 
@@ -262,13 +267,21 @@ export default function Home() {
       userPrompt: customUserPrompt ?? userPrompt,
     };
 
+    // For reasoning mode, add raw: true to get reasoning content
+    const apiEndpoint = aiMode === "reasoning" 
+      ? `/api/holidays-${aiMode}`
+      : `/api/holidays-${aiMode}`;
+    const requestBody = aiMode === "reasoning"
+      ? { ...payload, raw: true }
+      : payload;
+
     try {
-      const response = await fetch(`/api/holidays-${aiMode}`, {
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(requestBody),
       });
 
       let data: any = null;
@@ -279,10 +292,11 @@ export default function Home() {
       }
 
       if (data) {
-        setRawRequest(data.request || payload);
+        setRawRequest(data.request || requestBody);
         setRawResponse(data.response || data);
+        setReasoningOutput(data.reasoning ?? null);
       } else {
-        setRawRequest(payload);
+        setRawRequest(requestBody);
       }
 
       if (!response.ok) {
@@ -302,8 +316,9 @@ export default function Home() {
         [aiMode]: {
           result: resultString,
           source: data.source ?? "",
-          rawRequest: data.request || payload,
+          rawRequest: data.request || requestBody,
           rawResponse: data.response || data,
+          reasoning: data.reasoning ?? null,
           error: ""
         }
       }));
@@ -319,8 +334,9 @@ export default function Home() {
         [aiMode]: {
           result: "",
           source: "",
-          rawRequest: payload,
+          rawRequest: requestBody,
           rawResponse: null,
+          reasoning: null,
           error: errMessage
         }
       }));
@@ -431,6 +447,13 @@ export default function Home() {
                     className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "rag" ? "bg-teal-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                   >
                     RAG Search
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAiModeChange("reasoning")}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${aiMode === "reasoning" ? "bg-violet-500 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    Reasoning
                   </button>
                 </div>
               </div>
@@ -572,6 +595,8 @@ export default function Home() {
                     ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                     : source === "rag"
                       ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
+                    : source === "reasoning"
+                      ? "bg-violet-500/10 text-violet-400 border border-violet-500/20"
                       : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                 }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
@@ -582,6 +607,8 @@ export default function Home() {
                       ? "bg-sky-400"
                       : source === "rag"
                         ? "bg-teal-400"
+                      : source === "reasoning"
+                        ? "bg-violet-400"
                         : "bg-amber-400"
                   }`} />
                 {source === "mcp"
@@ -590,8 +617,10 @@ export default function Home() {
                     ? "AI Pretrained Knowledge"
                     : source === "lora"
                       ? "LoRA Model Output"
-                      : source === "rag"
-                        ? "Vector-RAG Knowledge"
+                    : source === "rag"
+                      ? "Vector-RAG Knowledge"
+                      : source === "reasoning"
+                        ? "Qwen Reasoning Model"
                         : "AI Model Fallback"}
               </span>
             ) : null}
@@ -647,15 +676,24 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Raw Request & Response JSONs (Debug) */}
+        {/* Raw Request, Reasoning & Response JSONs (Debug) */}
         {!loading && (rawRequest || rawResponse) && (() => {
           const toolMessage = rawRequest?.messages?.find((m: any) => m.role === "tool");
           const toolResponseContent = toolMessage?.content;
           const isRagMode = aiMode === "rag";
+          const isReasoningMode = aiMode === "reasoning";
           const ragMetadata = rawResponse?.extracted_metadata;
           const ragVectorResults = rawResponse?.vector_search_results;
           const hasRagDetails = isRagMode && (ragMetadata || ragVectorResults);
-          const showThirdColumn = toolResponseContent || hasRagDetails;
+          const hasReasoning = isReasoningMode && reasoningOutput;
+          const hasMiddleColumn = toolResponseContent || hasRagDetails || isReasoningMode;
+
+          // Determine grid layout based on available columns
+          const columnCount = (() => {
+            let count = 2; // Always: request + response
+            if (hasMiddleColumn) count++;
+            return count;
+          })();
 
           return (
             <section className="w-full bg-slate-950/40 border border-slate-800/50 rounded-3xl p-5 md:p-6 space-y-4">
@@ -663,10 +701,10 @@ export default function Home() {
                 <svg className="w-4.5 h-4.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                Raw Model Request, Tool Execution & Response Debugger
+                Raw Model Request, Reasoning & Response Debugger
               </h3>
 
-              <div className={`grid grid-cols-1 ${showThirdColumn ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
+              <div className={`grid grid-cols-1 ${columnCount >= 3 ? 'lg:grid-cols-3' : columnCount === 2 && !hasMiddleColumn ? 'lg:grid-cols-2' : 'lg:grid-cols-2'} gap-6`}>
                 {/* Request JSON */}
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -680,7 +718,7 @@ export default function Home() {
                   </pre>
                 </div>
 
-                {/* Tool Response Column (only if tool response exists) */}
+                {/* Middle Column: Tool Response, RAG Details, or Reasoning Output */}
                 {toolResponseContent && (
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
@@ -695,24 +733,10 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Response JSON */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Raw Response JSON
-                  </label>
-                  <pre
-                    id="raw-response-json"
-                    className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
-                  >
-                    {rawResponse ? JSON.stringify(rawResponse, null, 2) : "No response payload"}
-                  </pre>
-                </div>
-
-                {/* RAG Search Details Column (only if in RAG mode) */}
-                {hasRagDetails && (
+                {hasRagDetails && !toolResponseContent && (
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-teal-400 uppercase tracking-wider">
-                      RAG Vector Matches & Extracted Metadata
+                      RAG Vector Matches &amp; Extracted Metadata
                     </label>
                     <div className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent space-y-4">
                       {ragMetadata && (
@@ -740,6 +764,37 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* Reasoning pane — always visible in reasoning mode */}
+                {isReasoningMode && !toolResponseContent && !hasRagDetails && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-violet-400 uppercase tracking-wider flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3 3 0 01-2.121.879H9.25a3 3 0 01-2.121-.879l-.347-.347z" />
+                      </svg>
+                      AI Reasoning Process
+                    </label>
+                    <pre
+                      id="reasoning-output"
+                      className="w-full h-80 overflow-auto rounded-2xl border border-violet-500/20 bg-violet-950/20 p-4 text-xs font-mono leading-relaxed text-violet-200 scrollbar-thin scrollbar-thumb-violet-800 scrollbar-track-transparent whitespace-pre-wrap"
+                    >
+                      {reasoningOutput ?? "\u2014 No reasoning output returned by the model.\n\nThis model may not expose chain-of-thought reasoning,\nor the 'raw' parameter is not supported for this endpoint."}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Response JSON */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Raw Response JSON
+                  </label>
+                  <pre
+                    id="raw-response-json"
+                    className="w-full h-80 overflow-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-xs font-mono leading-relaxed text-slate-350 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
+                  >
+                    {rawResponse ? JSON.stringify(rawResponse, null, 2) : "No response payload"}
+                  </pre>
+                </div>
               </div>
             </section>
           );
