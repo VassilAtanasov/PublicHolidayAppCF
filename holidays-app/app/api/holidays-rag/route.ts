@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-export const runtime = "edge";
-
 const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const VECTORIZE_INDEX_NAME = "holidays-rag-index";
@@ -202,7 +200,7 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       metadataFilters.country = { $in: filterMetadata.countries };
     }
 
-    const { env } = getCloudflareContext();
+    const { env } = await getCloudflareContext({ async: true });
     const vectorizeIndex = (env as any).VECTORIZE_INDEX;
 
     if (!vectorizeIndex) {

@@ -7,6 +7,6 @@ initOpenNextCloudflareForDev({
   experimental: {
     remoteBindings: true
   }
-});
+} as any);
 
 export default nextConfig;
