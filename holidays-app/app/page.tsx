@@ -148,6 +148,53 @@ Today is ${formattedDate}.`;
   return basePrompt;
 }
 
+function buildReasoningSystemPrompt(formattedDate: string): string {
+  return `You are an authoritative world public holiday database. Return the requested holiday data in clean Markdown.
+
+DEFINITIONS:
+- "National public holiday" = an official government-declared non-working day for the entire country.
+- Include: independence days, republic days, national days, liberation days, constitution days, revolution days, and widely observed religious holidays that are official non-working days nationwide.
+- Exclude: regional/state-only holidays, bank-only closures, school holidays.
+
+STEP-BY-STEP REASONING APPROACH:
+1. Identify the target date and day of week.
+2. Check the United States first. If the US has a holiday on this date, list it first.
+3. Sweep each region by explicitly checking the named countries below:
+   - North America: USA, Canada, Mexico
+   - South America: Brazil, Colombia, Argentina, Peru, Venezuela, Chile, Ecuador, Bolivia, Paraguay, Uruguay
+   - Europe: Germany, France, UK, Italy, Spain, Poland, Romania, Netherlands, Belgium, Portugal, Sweden, Norway, Finland, Denmark, Austria, Switzerland, Czech Republic, Hungary, Greece, Croatia, Serbia, Bulgaria, Slovakia, Ireland, Luxembourg
+   - Africa: Nigeria, Ethiopia, Egypt, DRC, Tanzania, Kenya, South Africa, Algeria, Sudan, Morocco, Ghana, Mozambique, Angola, Ivory Coast, Cameroon, Madagascar
+   - Middle East: Turkey, Iran, Iraq, Saudi Arabia, Yemen, Syria, UAE, Jordan, Israel, Kuwait, Bahrain, Qatar, Oman, Lebanon
+   - South & SE Asia: India, Indonesia, Pakistan, Bangladesh, Vietnam, Philippines, Thailand, Myanmar, Malaysia, Nepal, Sri Lanka, Cambodia, Laos
+   - East Asia: China, Japan, South Korea, Taiwan, Mongolia
+   - Oceania: Australia, New Zealand, Papua New Guinea, Fiji
+4. For EACH named country, ask: "Does this country have a national public holiday on [date]?" Consider:
+   a) Fixed-date national days: independence days, republic days, national days, liberation/revolution/constitution days
+   b) Moveable holidays for the exact year: Easter-derived, Islamic Hijri calendar, lunar/Buddhist calendar
+5. MANDATORY final cross-check: "Is [month] [day] the independence day, republic day, national day, or liberation day of ANY country?" — well-known fixed national days MUST be included even if you feel less than fully certain. It is better to include a genuine holiday than to omit it.
+6. Write the output. For any well-known national day you recall (e.g. a republic day, independence day), include it confidently — these are established historical facts, not hallucinations.
+
+OUTPUT FORMAT — use exactly this structure:
+
+## [Holiday Name]
+- [Largest-population country first]
+- [Next country by population]
+
+For a holiday in one country only:
+## [Holiday Name]
+- [Country]
+
+If truly no national public holidays exist for this date (after completing all steps above):
+No national public holidays found for this date.
+
+OUTPUT RULES:
+- Every holiday gets a ## heading. Never write "Holiday - Country" inline.
+- Countries under each heading are ordered by population (largest first).
+- United States holidays appear first, before all others.
+- Do not list the same country under two different headings.
+
+Today is ${formattedDate}.`;
+}
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
   const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp" | "rag" | "reasoning">("base");
@@ -171,7 +218,7 @@ export default function Home() {
       lora: buildSystemPrompt(formatted),
       mcp: buildSystemPrompt(formatted),
       rag: buildSystemPrompt(formatted),
-      reasoning: buildSystemPrompt(formatted),
+      reasoning: buildReasoningSystemPrompt(formatted),
     };
   });
 
@@ -268,7 +315,7 @@ export default function Home() {
     };
 
     // For reasoning mode, add raw: true to get reasoning content
-    const apiEndpoint = aiMode === "reasoning" 
+    const apiEndpoint = aiMode === "reasoning"
       ? `/api/holidays-${aiMode}`
       : `/api/holidays-${aiMode}`;
     const requestBody = aiMode === "reasoning"
@@ -595,9 +642,9 @@ export default function Home() {
                     ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                     : source === "rag"
                       ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
-                    : source === "reasoning"
-                      ? "bg-violet-500/10 text-violet-400 border border-violet-500/20"
-                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      : source === "reasoning"
+                        ? "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                        : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                 }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${source === "mcp"
                   ? "bg-emerald-400 animate-ping"
@@ -607,9 +654,9 @@ export default function Home() {
                       ? "bg-sky-400"
                       : source === "rag"
                         ? "bg-teal-400"
-                      : source === "reasoning"
-                        ? "bg-violet-400"
-                        : "bg-amber-400"
+                        : source === "reasoning"
+                          ? "bg-violet-400"
+                          : "bg-amber-400"
                   }`} />
                 {source === "mcp"
                   ? "MCP Worker Data Verified"
@@ -617,11 +664,11 @@ export default function Home() {
                     ? "AI Pretrained Knowledge"
                     : source === "lora"
                       ? "LoRA Model Output"
-                    : source === "rag"
-                      ? "Vector-RAG Knowledge"
-                      : source === "reasoning"
-                        ? "Qwen Reasoning Model"
-                        : "AI Model Fallback"}
+                      : source === "rag"
+                        ? "Vector-RAG Knowledge"
+                        : source === "reasoning"
+                          ? "Qwen Reasoning Model"
+                          : "AI Model Fallback"}
               </span>
             ) : null}
           </div>

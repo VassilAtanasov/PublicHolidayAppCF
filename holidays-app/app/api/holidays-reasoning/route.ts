@@ -56,9 +56,9 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      temperature: 0.0,
-      top_p: 0.1,
-      raw: true  // Enable raw mode to get reasoning content
+      temperature: 0.7,  // Loosened: broader factual recall in chain-of-thought
+      top_p: 0.9,         // Wide probability mass to surface less-dominant but correct facts
+      raw: true           // Enable raw mode to get reasoning content
     };
 
     // Make AI request with reasoning model
