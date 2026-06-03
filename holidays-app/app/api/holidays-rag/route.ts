@@ -8,7 +8,7 @@ const CORS_HEADERS = {
 };
 
 export async function OPTIONS() {
-  return NextResponse.json({}, { status: 204, headers: CORS_HEADERS });
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
 
 const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";

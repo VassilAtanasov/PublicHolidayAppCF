@@ -7,7 +7,7 @@ const CORS_HEADERS = {
 };
 
 export async function OPTIONS() {
-  return NextResponse.json({}, { status: 204, headers: CORS_HEADERS });
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
 
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
