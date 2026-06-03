@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { status: 204, headers: CORS_HEADERS });
+}
+
 const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const DEFAULT_MCP_URL = "http://localhost:8787";
 const SYSTEM_PROMPT =
@@ -24,7 +34,7 @@ export async function POST(request: Request) {
     };
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required." }, { status: 400 });
+      return NextResponse.json({ error: "Date is required." }, { status: 400, headers: CORS_HEADERS });
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
@@ -34,7 +44,7 @@ export async function POST(request: Request) {
     if (!accountId || !apiToken) {
       return NextResponse.json(
         { error: "Missing Cloudflare configuration." },
-        { status: 500 },
+        { status: 500, headers: CORS_HEADERS },
       );
     }
 
@@ -115,7 +125,7 @@ export async function POST(request: Request) {
       console.error(`AI API Error (${response.status}):`, errorText);
       return NextResponse.json(
         { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
-        { status: 500 },
+        { status: 500, headers: CORS_HEADERS },
       );
     }
 
@@ -170,7 +180,7 @@ export async function POST(request: Request) {
           result: data.result?.response ?? "No results returned due to invalid tool call.",
           request: initialPayload,
           response: data
-        });
+        }, { headers: CORS_HEADERS });
       }
 
       // Parse arguments if they are returned as string
@@ -277,7 +287,7 @@ export async function POST(request: Request) {
           result: data.result?.response ?? "No results returned.",
           request: finalPayload,
           response: { error: `Final response error: ${errorText}` }
-        });
+        }, { headers: CORS_HEADERS });
       }
 
       const finalData = (await finalResponse.json()) as {
@@ -291,7 +301,7 @@ export async function POST(request: Request) {
         result: finalResultText,
         request: finalPayload,
         response: finalData
-      });
+      }, { headers: CORS_HEADERS });
     }
 
     // No tool calls - use direct model response
@@ -301,13 +311,13 @@ export async function POST(request: Request) {
       result: modelResponse ?? "No results returned.",
       request: initialPayload,
       response: data
-    });
+    }, { headers: CORS_HEADERS });
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
       { error: "Failed to process request" },
-      { status: 500 },
+      { status: 500, headers: CORS_HEADERS },
     );
   }
 }

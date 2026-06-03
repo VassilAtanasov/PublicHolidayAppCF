@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { status: 204, headers: CORS_HEADERS });
+}
+
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 // const MODEL = "@cf/nvidia/nemotron-3-120b-a12b";
 // const MODEL = "@cf/openai/gpt-oss-120b";
@@ -25,7 +35,7 @@ export async function POST(request: Request) {
     };
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required." }, { status: 400 });
+      return NextResponse.json({ error: "Date is required." }, { status: 400, headers: CORS_HEADERS });
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
@@ -34,7 +44,7 @@ export async function POST(request: Request) {
     if (!accountId || !apiToken) {
       return NextResponse.json(
         { error: "Missing Cloudflare configuration." },
-        { status: 500 },
+        { status: 500, headers: CORS_HEADERS },
       );
     }
 
@@ -79,7 +89,7 @@ export async function POST(request: Request) {
       console.error(`AI API Error (${response.status}):`, errorText);
       return NextResponse.json(
         { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
-        { status: 500 },
+        { status: 500, headers: CORS_HEADERS },
       );
     }
 
@@ -132,13 +142,13 @@ export async function POST(request: Request) {
       reasoning: reasoningContent,
       request: requestPayload,
       response: data
-    });
+    }, { headers: CORS_HEADERS });
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
       { error: "Failed to process request" },
-      { status: 500 },
+      { status: 500, headers: CORS_HEADERS },
     );
   }
 }

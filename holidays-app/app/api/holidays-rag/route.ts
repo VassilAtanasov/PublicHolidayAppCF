@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { status: 204, headers: CORS_HEADERS });
+}
+
 const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const VECTORIZE_INDEX_NAME = "holidays-rag-index";
@@ -10,7 +20,7 @@ export async function POST(request: Request) {
     const { userPrompt, systemPrompt } = (await request.json()) as { userPrompt?: string; systemPrompt?: string; };
 
     if (!userPrompt) {
-      return NextResponse.json({ error: "userPrompt is required." }, { status: 400 });
+      return NextResponse.json({ error: "userPrompt is required." }, { status: 400, headers: CORS_HEADERS });
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
@@ -19,7 +29,7 @@ export async function POST(request: Request) {
     if (!accountId || !apiToken) {
       return NextResponse.json(
         { error: "Missing Cloudflare configuration." },
-        { status: 500 },
+        { status: 500, headers: CORS_HEADERS },
       );
     }
 
@@ -252,13 +262,13 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       result: synthesisData.result?.response ?? "No results returned.",
       extracted_metadata: filterMetadata,
       vector_search_results: matches
-    });
+    }, { headers: CORS_HEADERS });
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
     return NextResponse.json(
       { error: "Failed to process RAG request", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 },
+      { status: 500, headers: CORS_HEADERS },
     );
   }
 }
