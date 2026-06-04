@@ -378,7 +378,7 @@ export default function Home() {
             try {
               const dataJson = JSON.parse(dataStr);
               if (dataJson.type === "status") {
-                setStatusSteps(prev => [...prev, dataJson.message]);
+                setStatusSteps(prev => [...prev, dataJson.message || dataJson.text]);
               } else if (dataJson.type === "reasoning") {
                 currentReasoning += dataJson.text;
                 setReasoningOutput(currentReasoning);

@@ -16,6 +16,32 @@ const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const VECTORIZE_INDEX_NAME = "holidays-rag-index";
 
+function parseDateToTimestamp(dateStr: any, endOfDay: boolean): number | null {
+  if (!dateStr || typeof dateStr !== "string") return null;
+
+  // Try parsing the date string directly
+  let date = new Date(dateStr);
+  if (isNaN(date.getTime())) {
+    // Try clean YYYY-MM-DD by stripping any time part
+    const cleanYmd = dateStr.match(/^\d{4}-\d{2}-\d{2}/);
+    if (cleanYmd) {
+      date = new Date(cleanYmd[0]);
+    }
+  }
+
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+
+  const isoStr = endOfDay ? `${yyyy}-${mm}-${dd}T23:59:59Z` : `${yyyy}-${mm}-${dd}T00:00:00Z`;
+  const finalTime = new Date(isoStr).getTime();
+  return isNaN(finalTime) ? null : Math.floor(finalTime / 1000);
+}
+
 export async function POST(request: Request) {
   const { response, writeEvent, close, writeError } = createSseResponse();
 
@@ -203,13 +229,16 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       await writeEvent("status", "Querying Vectorize database index...");
       console.log("Step 3: Querying Vectorize...");
       const metadataFilters: any = {};
-      if (filterMetadata.start_date || filterMetadata.end_date) {
+      const startTimestamp = parseDateToTimestamp(filterMetadata.start_date, false);
+      const endTimestamp = parseDateToTimestamp(filterMetadata.end_date, true);
+
+      if (startTimestamp !== null || endTimestamp !== null) {
         metadataFilters.timestamp = {};
-        if (filterMetadata.start_date) {
-          metadataFilters.timestamp.$gte = Math.floor(new Date(`${filterMetadata.start_date}T00:00:00Z`).getTime() / 1000);
+        if (startTimestamp !== null) {
+          metadataFilters.timestamp.$gte = startTimestamp;
         }
-        if (filterMetadata.end_date) {
-          metadataFilters.timestamp.$lte = Math.floor(new Date(`${filterMetadata.end_date}T23:59:59Z`).getTime() / 1000);
+        if (endTimestamp !== null) {
+          metadataFilters.timestamp.$lte = endTimestamp;
         }
       }
       if (filterMetadata.countries && filterMetadata.countries.length > 0) {
