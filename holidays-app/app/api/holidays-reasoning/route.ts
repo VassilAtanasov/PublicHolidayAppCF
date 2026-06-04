@@ -78,36 +78,40 @@ export async function POST(request: Request) {
       stream: true        // Enable streaming
     };
 
-    // Stream the raw request payload to client
-    await writeEvent("request", { request: requestPayload });
+    // Run the processing in the background asynchronously
+    void (async () => {
+      try {
+        // Stream the raw request payload to client
+        await writeEvent("request", { request: requestPayload });
 
-    // Make AI request with reasoning model
-    const cfResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestPayload),
-      },
-    );
+        // Make AI request with reasoning model
+        const cfResponse = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestPayload),
+          },
+        );
 
-    if (!cfResponse.ok) {
-      const errorText = await cfResponse.text();
-      console.error(`AI API Error (${cfResponse.status}):`, errorText);
-      await writeError(`Failed to fetch from Cloudflare Workers AI: ${errorText}`);
-      return response;
-    }
+        if (!cfResponse.ok) {
+          const errorText = await cfResponse.text();
+          console.error(`AI API Error (${cfResponse.status}):`, errorText);
+          await writeError(`Failed to fetch from Cloudflare Workers AI: ${errorText}`);
+          return;
+        }
 
-    // Start streaming asynchronously
-    void streamCloudflareAiResponse(cfResponse, writeEvent)
-      .then(close)
-      .catch(async (err) => {
+        // Start streaming asynchronously
+        await streamCloudflareAiResponse(cfResponse, writeEvent);
+        await close();
+      } catch (err) {
         console.error("Streaming error:", err);
         await writeError(err instanceof Error ? err.message : String(err));
-      });
+      }
+    })();
 
     return response;
 
