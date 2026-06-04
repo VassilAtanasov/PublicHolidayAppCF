@@ -1,7 +1,5 @@
 import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
 
-export const runtime = "edge";
-
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
