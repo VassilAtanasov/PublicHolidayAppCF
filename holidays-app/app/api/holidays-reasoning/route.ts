@@ -78,6 +78,9 @@ export async function POST(request: Request) {
       stream: true        // Enable streaming
     };
 
+    // Stream the raw request payload to client
+    await writeEvent("request", { request: requestPayload });
+
     // Make AI request with reasoning model
     const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,

@@ -261,6 +261,12 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
 
       const matches = vectorizeRes.matches || [];
 
+      // Stream RAG search details (extracted query criteria & vector search results) to client
+      await writeEvent("rag_details", {
+        extracted_metadata: filterMetadata,
+        vector_search_results: matches
+      });
+
       const retrievedContext = matches.map((m: any) => {
         const c = m.metadata;
         return `- Date: ${c.date}, Holiday ID: ${m.id}, Country: ${c.country} (Score: ${m.score.toFixed(3)})`;
@@ -273,6 +279,16 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       console.log("Step 4: Synthesizing final answer...");
       const synthesisSystemPrompt = systemPrompt || `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Do not hallucinate holidays not listed in the context. If the context is empty or doesn't answer the question, say so.`;
       const synthesisUserPrompt = `User question: "${userPrompt}"\n\nRetrieved Holiday Context:\n${retrievedContext ? retrievedContext : "No holidays matched."}\n\nPlease provide a clear, concise answer.`;
+
+      const synthesisPayload = {
+        messages: [
+          { role: "system", content: synthesisSystemPrompt },
+          { role: "user", content: synthesisUserPrompt }
+        ],
+        stream: true
+      };
+      // Stream the raw request payload to client
+      await writeEvent("request", { request: synthesisPayload });
 
       const synthesisRes = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${LLM_MODEL}`,

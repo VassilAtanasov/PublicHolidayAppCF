@@ -356,6 +356,9 @@ export default function Home() {
 
       let currentResult = "";
       let currentReasoning = "";
+      let streamRawRequest: any = null;
+      let streamRagMetadata: any = null;
+      let streamRagVectorResults: any[] = [];
 
       while (true) {
         const { value, done } = await reader.read();
@@ -385,6 +388,12 @@ export default function Home() {
               } else if (dataJson.type === "content") {
                 currentResult += dataJson.text;
                 setResult(currentResult);
+              } else if (dataJson.type === "request") {
+                streamRawRequest = dataJson.request;
+                setRawRequest(streamRawRequest);
+              } else if (dataJson.type === "rag_details") {
+                streamRagMetadata = dataJson.extracted_metadata;
+                streamRagVectorResults = dataJson.vector_search_results;
               } else if (dataJson.type === "error") {
                 throw new Error(dataJson.error || "An error occurred during streaming.");
               } else if (dataJson.type === "done") {
@@ -408,7 +417,9 @@ export default function Home() {
           reasoning: currentReasoning || undefined
         },
         source: aiMode,
-        streaming: true
+        streaming: true,
+        extracted_metadata: streamRagMetadata || undefined,
+        vector_search_results: streamRagVectorResults && streamRagVectorResults.length > 0 ? streamRagVectorResults : undefined
       };
       setRawResponse(mockedResponse);
 
@@ -418,7 +429,7 @@ export default function Home() {
         [aiMode]: {
           result: currentResult,
           source: aiMode,
-          rawRequest: requestBody,
+          rawRequest: streamRawRequest || requestBody,
           rawResponse: mockedResponse,
           reasoning: currentReasoning || null,
           error: ""

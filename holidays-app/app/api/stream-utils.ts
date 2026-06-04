@@ -1,4 +1,4 @@
-export type StreamEventType = "status" | "reasoning" | "content" | "error" | "done";
+export type StreamEventType = "status" | "reasoning" | "content" | "error" | "done" | "request" | "rag_details";
 
 /**
  * Creates a standard Server-Sent Events (SSE) response and returns utility functions

@@ -136,6 +136,9 @@ export async function POST(request: Request) {
         tools: tools.length > 0 ? tools : undefined
       };
 
+      // Stream the initial request payload to client
+      await writeEvent("request", { request: initialPayload });
+
       // 3. Make initial AI request (non-streaming to extract tool calls cleanly)
       const initialResponse = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
@@ -291,6 +294,9 @@ export async function POST(request: Request) {
           ],
           stream: true // Enable streaming for final output
         };
+
+        // Stream the final request payload (containing tool calls & results) to client
+        await writeEvent("request", { request: finalPayload });
 
         const finalResponse = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
