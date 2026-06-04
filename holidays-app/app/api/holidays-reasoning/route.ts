@@ -2,6 +2,16 @@ import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
 
 export const runtime = "edge";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 // const MODEL = "@cf/nvidia/nemotron-3-120b-a12b";
 // const MODEL = "@cf/openai/gpt-oss-120b";
@@ -20,6 +30,11 @@ function formatDate(date: string) {
 
 export async function POST(request: Request) {
   const { response, writeEvent, close, writeError } = createSseResponse();
+
+  // Apply CORS headers to the response object if possible
+  Object.entries(CORS_HEADERS).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
 
   try {
     const { date, systemPrompt, userPrompt } = (await request.json()) as {
@@ -100,4 +115,4 @@ export async function POST(request: Request) {
     await writeError("Failed to process request");
     return response;
   }
-}
+}

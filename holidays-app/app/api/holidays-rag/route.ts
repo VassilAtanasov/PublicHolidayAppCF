@@ -4,12 +4,27 @@ import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
 
 export const runtime = "edge";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const VECTORIZE_INDEX_NAME = "holidays-rag-index";
 
 export async function POST(request: Request) {
   const { response, writeEvent, close, writeError } = createSseResponse();
+
+  // Apply CORS headers to the response object if possible
+  Object.entries(CORS_HEADERS).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
 
   try {
     const { userPrompt, systemPrompt } = (await request.json()) as { userPrompt?: string; systemPrompt?: string; };
