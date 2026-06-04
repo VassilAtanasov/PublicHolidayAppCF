@@ -389,10 +389,10 @@ export default function Home() {
                 break;
               }
             } catch (e) {
-              if (e instanceof Error && e.message.includes("JSON")) {
+              if (e instanceof SyntaxError) {
                 console.warn("Failed to parse SSE data JSON line:", trimmed, e);
               } else {
-                throw e; // Propagate error events to catch block
+                throw e; // Propagate custom errors to outer catch
               }
             }
           }
