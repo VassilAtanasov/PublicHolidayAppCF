@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
+
+export const runtime = "edge";
 
 const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const DEFAULT_MCP_URL = "http://localhost:8787";
@@ -16,6 +18,8 @@ function formatDate(date: string) {
 }
 
 export async function POST(request: Request) {
+  const { response, writeEvent, close, writeError } = createSseResponse();
+
   try {
     const { date, systemPrompt, userPrompt } = (await request.json()) as {
       date?: string;
@@ -24,7 +28,8 @@ export async function POST(request: Request) {
     };
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required." }, { status: 400 });
+      await writeError("Date is required.");
+      return response;
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
@@ -32,16 +37,15 @@ export async function POST(request: Request) {
     const mcpUrl = process.env.MCP_URL || DEFAULT_MCP_URL;
 
     if (!accountId || !apiToken) {
-      return NextResponse.json(
-        { error: "Missing Cloudflare configuration." },
-        { status: 500 },
-      );
+      await writeError("Missing Cloudflare configuration.");
+      return response;
     }
 
     const formattedDate = formatDate(date);
     const finalSystemPrompt = systemPrompt || `${SYSTEM_PROMPT} Today is ${formattedDate}.`;
 
     // 1. Fetch available tools dynamically from the MCP Server using the tools/list RPC
+    await writeEvent("status", "Connecting to MCP server...");
     let mcpTools: any[] = [];
     try {
       console.log(`Fetching tools from MCP server at: ${mcpUrl}`);
@@ -61,11 +65,14 @@ export async function POST(request: Request) {
         const listData = await listResponse.json() as { result?: { tools?: any[] } };
         mcpTools = listData.result?.tools || [];
         console.log(`Discovered ${mcpTools.length} tools from MCP Server`);
+        await writeEvent("status", `Discovered ${mcpTools.length} tools on MCP server.`);
       } else {
         console.error(`Failed to list tools from MCP server. Status: ${listResponse.status}`);
+        await writeEvent("status", "Warning: Failed to list tools from MCP server. Falling back to direct model query.");
       }
     } catch (err) {
       console.error("Error communicating with MCP server for tools/list:", err);
+      await writeEvent("status", "Warning: MCP server offline. Falling back to direct model query.");
     }
 
     // 2. Map MCP tools to Cloudflare Workers AI function calling parameters
@@ -82,6 +89,7 @@ export async function POST(request: Request) {
 
     console.log("Holiday prompt:", finalUserPrompt);
     console.log("Sending initial prompt to Cloudflare Workers AI with tools count:", tools.length);
+    await writeEvent("status", "Running initial model query to check for tool calls...");
 
     const initialPayload = {
       messages: [
@@ -94,11 +102,11 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      tools: tools.length > 0 ? tools : undefined // Only pass tools if listed successfully
+      tools: tools.length > 0 ? tools : undefined
     };
 
-    // 3. Make initial AI request
-    const response = await fetch(
+    // 3. Make initial AI request (non-streaming to extract tool calls cleanly)
+    const initialResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
         method: "POST",
@@ -110,16 +118,14 @@ export async function POST(request: Request) {
       },
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`AI API Error (${response.status}):`, errorText);
-      return NextResponse.json(
-        { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
-        { status: 500 },
-      );
+    if (!initialResponse.ok) {
+      const errorText = await initialResponse.text();
+      console.error(`AI API Error (${initialResponse.status}):`, errorText);
+      await writeError(`Failed to fetch from Cloudflare Workers AI: ${errorText}`);
+      return response;
     }
 
-    const data = (await response.json()) as {
+    const data = (await initialResponse.json()) as {
       result?: {
         response?: string;
         tool_calls?: Array<{
@@ -147,7 +153,7 @@ export async function POST(request: Request) {
       };
     };
 
-    // Extract tool calls from standard choices format or flat result.tool_calls format
+    // Extract tool calls
     const choiceToolCalls = data.result?.choices?.[0]?.message?.tool_calls;
     const flatToolCalls = data.result?.tool_calls;
     const toolCalls = choiceToolCalls || flatToolCalls;
@@ -157,23 +163,18 @@ export async function POST(request: Request) {
       const toolCall = toolCalls[0] as any;
       console.log("Model requested MCP tool call:", toolCall);
 
-      // Support both flat toolCall (older spec) and nested function toolCall (OpenAI/Llama standard)
       const toolName = toolCall.name || toolCall.function?.name;
       const toolArguments = toolCall.arguments || toolCall.function?.arguments;
-      // Extract the exact tool-use identifier generated by Llama, or fallback to a custom one
       const callId = toolCall.id || `call_${toolName}_0`;
 
       if (!toolName) {
         console.error("Could not find tool name in tool call:", toolCall);
-        return NextResponse.json({
-          source: "model-fallback",
-          result: data.result?.response ?? "No results returned due to invalid tool call.",
-          request: initialPayload,
-          response: data
-        });
+        const modelResponse = data.result?.response ?? "No results returned due to invalid tool call.";
+        await writeEvent("content", modelResponse);
+        await close();
+        return response;
       }
 
-      // Parse arguments if they are returned as string
       let parsedArgs = {};
       try {
         parsedArgs = typeof toolArguments === "string"
@@ -183,9 +184,9 @@ export async function POST(request: Request) {
         console.error("Failed to parse tool call arguments:", err);
       }
 
+      await writeEvent("status", `Executing MCP tool: ${toolName}...`);
       console.log(`Executing tool "${toolName}" on MCP server with args:`, parsedArgs);
 
-      // Call the MCP server's tools/call RPC using clean JSON HTTP POST
       let toolResultText = "";
       try {
         const mcpResponse = await fetch(mcpUrl, {
@@ -212,17 +213,19 @@ export async function POST(request: Request) {
           };
           toolResultText = mcpJson.result?.content?.map(c => c.text).join("\n") || "No output from tool.";
           console.log("MCP tool execution result:", toolResultText);
+          await writeEvent("status", `Tool "${toolName}" completed successfully.`);
         } else {
           const errText = await mcpResponse.text();
           console.error(`MCP Server returned error status (${mcpResponse.status}):`, errText);
           toolResultText = `Error: MCP server failed to execute the tool. Status: ${mcpResponse.status}`;
+          await writeEvent("status", `Tool "${toolName}" failed. Continuing with error content.`);
         }
       } catch (err) {
         console.error("Error communicating with MCP server for tools/call:", err);
         toolResultText = `Error: Could not communicate with the MCP server to run the tool. ${err instanceof Error ? err.message : ""}`;
+        await writeEvent("status", `Could not contact MCP server to execute "${toolName}".`);
       }
 
-      // Format the tool call for the final AI call using the exact model-generated ID
       const formattedToolCalls = [
         {
           id: callId,
@@ -236,7 +239,6 @@ export async function POST(request: Request) {
         }
       ];
 
-      // Feed tool result back to the model for final answer generation
       const toolResultMessage = {
         role: "tool" as const,
         content: toolResultText,
@@ -244,8 +246,8 @@ export async function POST(request: Request) {
       };
 
       console.log("Sending tool result back to Cloudflare Workers AI for final response...");
+      await writeEvent("status", "Generating final response with tool context...");
 
-      // Extract the assistant's original response content robustly
       const assistantContent = data.result?.response || data.result?.choices?.[0]?.message?.content || "";
 
       const finalPayload = {
@@ -254,7 +256,8 @@ export async function POST(request: Request) {
           { role: "user", content: finalUserPrompt },
           { role: "assistant", content: assistantContent, tool_calls: formattedToolCalls },
           toolResultMessage
-        ]
+        ],
+        stream: true // Enable streaming for final output
       };
 
       const finalResponse = await fetch(
@@ -272,51 +275,32 @@ export async function POST(request: Request) {
       if (!finalResponse.ok) {
         const errorText = await finalResponse.text();
         console.error(`AI API Error for final response (${finalResponse.status}):`, errorText);
-        return NextResponse.json({
-          source: "model-fallback",
-          result: data.result?.response ?? "No results returned.",
-          request: finalPayload,
-          response: { error: `Final response error: ${errorText}` }
-        });
+        await writeError(`Final response error: ${errorText}`);
+        return response;
       }
 
-      const finalData = (await finalResponse.json()) as {
-        result?: { response?: string };
-      };
+      // Start streaming asynchronously
+      void streamCloudflareAiResponse(finalResponse, writeEvent)
+        .then(close)
+        .catch(async (err) => {
+          console.error("Streaming error in MCP:", err);
+          await writeError(err instanceof Error ? err.message : String(err));
+        });
 
-      const finalResultText = cleanFinalResponse(finalData.result?.response ?? "No results returned.");
-
-      return NextResponse.json({
-        source: "mcp",
-        result: finalResultText,
-        request: finalPayload,
-        response: finalData
-      });
+      return response;
     }
 
-    // No tool calls - use direct model response
-    const modelResponse = data.result?.response || data.result?.choices?.[0]?.message?.content;
-    return NextResponse.json({
-      source: "model",
-      result: modelResponse ?? "No results returned.",
-      request: initialPayload,
-      response: data
-    });
+    // No tool calls - return direct response
+    await writeEvent("status", "Direct response returned from model.");
+    const modelResponse = data.result?.response || data.result?.choices?.[0]?.message?.content || "";
+    await writeEvent("content", modelResponse);
+    await close();
+    return response;
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
-    return NextResponse.json(
-      { error: "Failed to process request" },
-      { status: 500 },
-    );
+    await writeError("Failed to process request");
+    return response;
   }
 }
 
-function cleanFinalResponse(text: string): string {
-  if (!text) return text;
-  // Strip any trailing JSON object representing a tool call (e.g., {"name": ..., "parameters": ...})
-  let cleaned = text.replace(/\s*\{"name":\s*"[^"]*",\s*"(?:parameters|arguments)":\s*\{[^}]*\}\}\s*$/g, "");
-  // Generic fallback to strip any trailing JSON block
-  cleaned = cleaned.replace(/\s*\{[^}]*\}\s*$/g, "");
-  return cleaned.trim();
-}

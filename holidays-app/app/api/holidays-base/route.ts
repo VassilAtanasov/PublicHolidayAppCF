@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
+
+export const runtime = "edge";
 
 const MODEL = "@cf/google/gemma-7b-it-lora";
 const SYSTEM_PROMPT =
@@ -15,6 +17,8 @@ function formatDate(date: string) {
 }
 
 export async function POST(request: Request) {
+  const { response, writeEvent, close, writeError } = createSseResponse();
+
   try {
     const { date, systemPrompt, userPrompt } = (await request.json()) as {
       date?: string;
@@ -23,17 +27,16 @@ export async function POST(request: Request) {
     };
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required." }, { status: 400 });
+      await writeError("Date is required.");
+      return response;
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
     const apiToken = process.env.CLOUDFLARE_WORKERS_AI_API_TOKEN;
 
     if (!accountId || !apiToken) {
-      return NextResponse.json(
-        { error: "Missing Cloudflare configuration." },
-        { status: 500 },
-      );
+      await writeError("Missing Cloudflare configuration.");
+      return response;
     }
 
     const formattedDate = formatDate(date);
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
     const finalUserPrompt = userPrompt || `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
 
     console.log("Holiday prompt:", finalUserPrompt);
-    console.log("Sending prompt to Cloudflare Workers AI with LoRA");
+    console.log("Sending prompt to Cloudflare Workers AI with LoRA (streaming)");
 
     const requestPayload = {
       messages: [
@@ -55,11 +58,12 @@ export async function POST(request: Request) {
         },
       ],
       temperature: 0.0, // Force absolute determinism
-      top_p: 0.1
+      top_p: 0.1,
+      stream: true // Enable streaming
     };
 
     // Make AI request with base model
-    const response = await fetch(
+    const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
         method: "POST",
@@ -71,33 +75,27 @@ export async function POST(request: Request) {
       },
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`AI API Error (${response.status}):`, errorText);
-      return NextResponse.json(
-        { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
-        { status: 500 },
-      );
+    if (!cfResponse.ok) {
+      const errorText = await cfResponse.text();
+      console.error(`AI API Error (${cfResponse.status}):`, errorText);
+      await writeError(`Failed to fetch from Cloudflare Workers AI: ${errorText}`);
+      return response;
     }
 
-    const data = (await response.json()) as {
-      result?: {
-        response?: string;
-      };
-    };
+    // Start streaming asynchronously
+    void streamCloudflareAiResponse(cfResponse, writeEvent)
+      .then(close)
+      .catch(async (err) => {
+        console.error("Streaming error:", err);
+        await writeError(err instanceof Error ? err.message : String(err));
+      });
 
-    return NextResponse.json({
-      source: "base",
-      result: data.result?.response ?? "No results returned.",
-      request: requestPayload,
-      response: data
-    });
+    return response;
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
-    return NextResponse.json(
-      { error: "Failed to process request" },
-      { status: 500 },
-    );
+    await writeError("Failed to process request");
+    return response;
   }
 }
+

@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
+
+export const runtime = "edge";
 
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 // const MODEL = "@cf/nvidia/nemotron-3-120b-a12b";
@@ -17,6 +19,8 @@ function formatDate(date: string) {
 }
 
 export async function POST(request: Request) {
+  const { response, writeEvent, close, writeError } = createSseResponse();
+
   try {
     const { date, systemPrompt, userPrompt } = (await request.json()) as {
       date?: string;
@@ -25,17 +29,16 @@ export async function POST(request: Request) {
     };
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required." }, { status: 400 });
+      await writeError("Date is required.");
+      return response;
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
     const apiToken = process.env.CLOUDFLARE_WORKERS_AI_API_TOKEN;
 
     if (!accountId || !apiToken) {
-      return NextResponse.json(
-        { error: "Missing Cloudflare configuration." },
-        { status: 500 },
-      );
+      await writeError("Missing Cloudflare configuration.");
+      return response;
     }
 
     const formattedDate = formatDate(date);
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
     const finalUserPrompt = userPrompt || `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
 
     console.log("Holiday reasoning prompt:", finalUserPrompt);
-    console.log("Sending prompt to Cloudflare Workers AI with Model: ", MODEL);
+    console.log("Sending prompt to Cloudflare Workers AI with Model (streaming): ", MODEL);
 
     const requestPayload = {
       messages: [
@@ -58,11 +61,12 @@ export async function POST(request: Request) {
       ],
       temperature: 0.7,  // Loosened: broader factual recall in chain-of-thought
       top_p: 0.9,         // Wide probability mass to surface less-dominant but correct facts
-      raw: true           // Enable raw mode to get reasoning content
+      raw: true,          // Enable raw mode to get reasoning content
+      stream: true        // Enable streaming
     };
 
     // Make AI request with reasoning model
-    const response = await fetch(
+    const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${MODEL}`,
       {
         method: "POST",
@@ -74,71 +78,26 @@ export async function POST(request: Request) {
       },
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`AI API Error (${response.status}):`, errorText);
-      return NextResponse.json(
-        { error: "Failed to fetch from Cloudflare Workers AI", details: errorText },
-        { status: 500 },
-      );
+    if (!cfResponse.ok) {
+      const errorText = await cfResponse.text();
+      console.error(`AI API Error (${cfResponse.status}):`, errorText);
+      await writeError(`Failed to fetch from Cloudflare Workers AI: ${errorText}`);
+      return response;
     }
 
-    const data = (await response.json()) as {
-      result?: {
-        response?: string;
-        reasoning?: string;
-        choices?: Array<{
-          message?: {
-            content?: string;
-            reasoning?: string;
-            role?: string;
-          };
-          finish_reason?: string;
-          index?: number;
-        }>;
-      } | string;
-      success?: boolean;
-      errors?: any[];
-    };
+    // Start streaming asynchronously
+    void streamCloudflareAiResponse(cfResponse, writeEvent)
+      .then(close)
+      .catch(async (err) => {
+        console.error("Streaming error:", err);
+        await writeError(err instanceof Error ? err.message : String(err));
+      });
 
-    console.log("Raw Cloudflare AI response:", JSON.stringify(data, null, 2));
-
-    // Handle all three response shapes:
-    // 1. OpenAI-compatible: result.choices[0].message.{content, reasoning}
-    // 2. Flat object:       result.{response, reasoning}
-    // 3. Plain string:      result (string)
-    let reasoningContent: string | null = null;
-    let finalResponse: string = "No results returned.";
-
-    if (typeof data.result === "object" && data.result !== null) {
-      const firstChoice = data.result.choices?.[0];
-      if (firstChoice?.message) {
-        // OpenAI-compatible format
-        finalResponse = firstChoice.message.content ?? "No results returned.";
-        reasoningContent = firstChoice.message.reasoning ?? null;
-      } else {
-        // Flat format
-        finalResponse = data.result.response ?? "No results returned.";
-        reasoningContent = data.result.reasoning ?? null;
-      }
-    } else if (typeof data.result === "string") {
-      // Plain string result — no reasoning block available
-      finalResponse = data.result;
-    }
-
-    return NextResponse.json({
-      source: "reasoning",
-      result: finalResponse,
-      reasoning: reasoningContent,
-      request: requestPayload,
-      response: data
-    });
+    return response;
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
-    return NextResponse.json(
-      { error: "Failed to process request" },
-      { status: 500 },
-    );
+    await writeError("Failed to process request");
+    return response;
   }
-}
+}

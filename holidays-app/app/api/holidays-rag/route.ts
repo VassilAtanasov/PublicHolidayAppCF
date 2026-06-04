@@ -1,32 +1,36 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { createSseResponse, streamCloudflareAiResponse } from "../stream-utils";
+
+export const runtime = "edge";
 
 const LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast";
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const VECTORIZE_INDEX_NAME = "holidays-rag-index";
 
 export async function POST(request: Request) {
+  const { response, writeEvent, close, writeError } = createSseResponse();
+
   try {
     const { userPrompt, systemPrompt } = (await request.json()) as { userPrompt?: string; systemPrompt?: string; };
 
     if (!userPrompt) {
-      return NextResponse.json({ error: "userPrompt is required." }, { status: 400 });
+      await writeError("userPrompt is required.");
+      return response;
     }
 
     const accountId = process.env.CLOUDFLARE_WORKERS_AI_ACCOUNT_ID;
     const apiToken = process.env.CLOUDFLARE_WORKERS_AI_API_TOKEN;
 
     if (!accountId || !apiToken) {
-      return NextResponse.json(
-        { error: "Missing Cloudflare configuration." },
-        { status: 500 },
-      );
+      await writeError("Missing Cloudflare configuration.");
+      return response;
     }
 
     // Step 1: LLM Extraction
+    await writeEvent("status", "Extracting query criteria...");
     console.log("Step 1: Extracting metadata...");
 
-    // We want the LLM to output ONLY a JSON object.
     const extractionSystemPrompt = `You are an expert query parser. Given a user's question about holidays, extract the search criteria into a strict JSON object.
 Return ONLY valid JSON and absolutely nothing else. No markdown formatting, no backticks.
 
@@ -79,7 +83,6 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       try {
         filterMetadata = JSON.parse(extractedJsonStr);
       } catch (e) {
-        // Try regex extraction of JSON block from conversational output
         const jsonMatch = extractedJsonStr.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try {
@@ -95,9 +98,7 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
       }
     }
 
-    // Ensure all filter metadata matches expected types to prevent VECTOR_QUERY_ERROR: Status + 400
     if (filterMetadata && typeof filterMetadata === "object") {
-      // If LLM returned valid JSON but without start_date / end_date, attempt prompt-based fallback extraction
       if (!filterMetadata.start_date && !filterMetadata.end_date) {
         try {
           let extractedDate: string | null = null;
@@ -170,7 +171,8 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
 
     console.log("Extracted Metadata:", filterMetadata);
 
-    // Step 2: Generate Embedding for the semantic query
+    // Step 2: Generate Embedding
+    await writeEvent("status", `Generating embedding for theme "${filterMetadata.semantic_query}"...`);
     console.log("Step 2: Generating embedding...");
     const embedRes = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${EMBED_MODEL}`,
@@ -185,6 +187,7 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
     const vector = embedData.result?.data?.[0] || embedData.result?.[0];
 
     // Step 3: Query Vectorize
+    await writeEvent("status", "Querying Vectorize database index...");
     console.log("Step 3: Querying Vectorize...");
     const metadataFilters: any = {};
     if (filterMetadata.start_date || filterMetadata.end_date) {
@@ -216,16 +219,15 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
 
     const matches = vectorizeRes.matches || [];
 
-    // Format matches for LLM context
     const retrievedContext = matches.map((m: any) => {
       const c = m.metadata;
-      // m.id format is YYYY-MM-DD-Holiday-Name-Country
       return `- Date: ${c.date}, Holiday ID: ${m.id}, Country: ${c.country} (Score: ${m.score.toFixed(3)})`;
     }).join("\n");
 
     console.log("Retrieved Context:\n" + retrievedContext);
 
     // Step 4: Final Synthesized Answer
+    await writeEvent("status", "Synthesizing response...");
     console.log("Step 4: Synthesizing final answer...");
     const synthesisSystemPrompt = systemPrompt || `You are a helpful holiday assistant. Answer the user's question using ONLY the provided holiday context retrieved from our database. Do not hallucinate holidays not listed in the context. If the context is empty or doesn't answer the question, say so.`;
     const synthesisUserPrompt = `User question: "${userPrompt}"\n\nRetrieved Holiday Context:\n${retrievedContext ? retrievedContext : "No holidays matched."}\n\nPlease provide a clear, concise answer.`;
@@ -239,26 +241,26 @@ Example JSON output: {"semantic_query": "public holiday", "start_date": "2026-06
           messages: [
             { role: "system", content: synthesisSystemPrompt },
             { role: "user", content: synthesisUserPrompt }
-          ]
+          ],
+          stream: true
         })
       }
     );
 
     if (!synthesisRes.ok) throw new Error("Failed synthesis: " + await synthesisRes.text());
-    const synthesisData = await synthesisRes.json() as any;
 
-    return NextResponse.json({
-      source: "rag",
-      result: synthesisData.result?.response ?? "No results returned.",
-      extracted_metadata: filterMetadata,
-      vector_search_results: matches
-    });
+    void streamCloudflareAiResponse(synthesisRes, writeEvent)
+      .then(close)
+      .catch(async (err) => {
+        console.error("Streaming error in RAG:", err);
+        await writeError(err instanceof Error ? err.message : String(err));
+      });
+
+    return response;
 
   } catch (error) {
     console.error("Error executing POST:", error instanceof Error ? error.stack : error);
-    return NextResponse.json(
-      { error: "Failed to process RAG request", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 },
-    );
+    await writeError(error instanceof Error ? error.message : "Failed to process RAG request");
+    return response;
   }
 }
