@@ -245,6 +245,8 @@ export default function Home() {
   const [statusSteps, setStatusSteps] = useState<string[]>([]);
   const hasAutoLoaded = useRef(false);
 
+  const isReasoningMode = aiMode === "reasoning";
+
   function updatePromptsForDate(prevDateStr: string, newDateStr: string) {
     const prevFormatted = formatDate(prevDateStr);
     const newFormatted = formatDate(newDateStr);
@@ -753,30 +755,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* 2. Reasoning / Thinking Process Output */}
-            {reasoningOutput && (
-              <div className="border border-slate-800/80 bg-slate-900/20 rounded-2xl overflow-hidden mb-4 animate-fade-in">
-                <details className="group" open>
-                  <summary className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-slate-900/40 transition">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-violet-400 uppercase tracking-wider">
-                      <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                      </svg>
-                      Thinking Process
-                    </div>
-                    <svg className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </summary>
-                  <div className="p-4 pt-0 border-t border-slate-900/40 text-[11px] font-mono text-slate-400 whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed scrollbar-thin scrollbar-thumb-slate-800">
-                    {reasoningOutput}
-                  </div>
-                </details>
-              </div>
-            )}
-
             {/* 3. Loading Skeleton */}
-            {loading && !result ? (
+            {loading && !result && !(isReasoningMode && reasoningOutput) ? (
               <div className="space-y-4 py-4">
                 <div className="h-4 bg-slate-900 rounded animate-pulse w-3/4" />
                 <div className="h-4 bg-slate-900 rounded animate-pulse w-5/6" />
@@ -789,7 +769,7 @@ export default function Home() {
 
             {/* 4. Error Display */}
             {!loading && error ? (
-              <div className="flex items-start gap-3 text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded-2xl p-4">
+              <div className="flex items-start gap-3 text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded-2xl p-4 mb-4">
                 <svg className="w-5 h-5 shrink-0 text-rose-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
@@ -800,8 +780,47 @@ export default function Home() {
               </div>
             ) : null}
 
-            {/* 5. Streamed/Final Result Content */}
-            {result ? (
+            {/* 5. Streamed/Final Result Content or Reasoning Mode grid */}
+            {isReasoningMode && (reasoningOutput || result) ? (
+              <div className="animate-fade-in py-1">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+                  {/* Reasoning Column */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-violet-400 uppercase tracking-wider px-1">
+                      <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      Thinking Process
+                    </div>
+                    <div className="text-violet-200 bg-violet-950/10 p-6 border border-violet-500/20 rounded-3xl overflow-y-auto max-h-[30rem] scrollbar-thin scrollbar-thumb-violet-900/50 shadow-inner text-[11px] font-mono whitespace-pre-wrap leading-relaxed">
+                      {reasoningOutput || (loading ? "Thinking in progress..." : "No thinking process returned.")}
+                    </div>
+                  </div>
+
+                  {/* Result Column */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Holiday Results
+                    </div>
+                    <div className="text-slate-350 bg-slate-900/30 p-6 border border-slate-900/80 rounded-3xl overflow-y-auto max-h-[30rem] scrollbar-thin scrollbar-thumb-slate-800 shadow-inner min-h-[15rem] flex flex-col justify-center">
+                      {result ? (
+                        <MarkdownRenderer content={result} />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-500 text-sm py-8">
+                          <svg className="w-8 h-8 animate-pulse mb-2 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                          </svg>
+                          Waiting for results...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : !isReasoningMode && result ? (
               <div className="animate-fade-in py-1">
                 <div className="text-slate-350 bg-slate-900/30 p-6 border border-slate-900/80 rounded-3xl overflow-x-auto max-h-[30rem] scrollbar-thin scrollbar-thumb-slate-800 shadow-inner">
                   <MarkdownRenderer content={result} />
@@ -810,7 +829,7 @@ export default function Home() {
             ) : null}
 
             {/* 6. Empty State */}
-            {!loading && !error && !result ? (
+            {!loading && !error && !result && !(isReasoningMode && reasoningOutput) ? (
               <div className="text-center py-8 space-y-2">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-900 border border-slate-800 text-slate-500">
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -833,12 +852,10 @@ export default function Home() {
           const toolMessage = rawRequest?.messages?.find((m: any) => m.role === "tool");
           const toolResponseContent = toolMessage?.content;
           const isRagMode = aiMode === "rag";
-          const isReasoningMode = aiMode === "reasoning";
           const ragMetadata = rawResponse?.extracted_metadata;
           const ragVectorResults = rawResponse?.vector_search_results;
           const hasRagDetails = isRagMode && (ragMetadata || ragVectorResults);
-          const hasReasoning = isReasoningMode && reasoningOutput;
-          const hasMiddleColumn = toolResponseContent || hasRagDetails || isReasoningMode;
+          const hasMiddleColumn = toolResponseContent || hasRagDetails;
 
           // Determine grid layout based on available columns
           const columnCount = (() => {
@@ -917,23 +934,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Reasoning pane — always visible in reasoning mode */}
-                {isReasoningMode && !toolResponseContent && !hasRagDetails && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold text-violet-400 uppercase tracking-wider flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3 3 0 01-2.121.879H9.25a3 3 0 01-2.121-.879l-.347-.347z" />
-                      </svg>
-                      AI Reasoning Process
-                    </label>
-                    <pre
-                      id="reasoning-output"
-                      className="w-full h-80 overflow-auto rounded-2xl border border-violet-500/20 bg-violet-950/20 p-4 text-xs font-mono leading-relaxed text-violet-200 scrollbar-thin scrollbar-thumb-violet-800 scrollbar-track-transparent whitespace-pre-wrap"
-                    >
-                      {reasoningOutput ?? "\u2014 No reasoning output returned by the model.\n\nThis model may not expose chain-of-thought reasoning,\nor the 'raw' parameter is not supported for this endpoint."}
-                    </pre>
-                  </div>
-                )}
+
 
                 {/* Response JSON */}
                 <div className="flex flex-col gap-2">
