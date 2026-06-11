@@ -10,7 +10,10 @@
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "evaluate": "npx tsx scripts/evaluation/runner.ts",
+    "evaluate:dates": "npx tsx scripts/evaluation/runner.ts",
+    "report": "npx tsx scripts/evaluation/reporter.ts"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.18.0",
@@ -26,6 +29,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5",
     "wrangler": "^4.80.0"
   }
