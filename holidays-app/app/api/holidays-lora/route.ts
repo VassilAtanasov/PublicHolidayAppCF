@@ -12,22 +12,7 @@ export async function OPTIONS() {
 
 const MODEL = "@cf/google/gemma-7b-it-lora";
 const SYSTEM_PROMPT =
-  `You are a precise world holiday reference database. Return ONLY the requested holiday information in clean Markdown format. Never add introductions, conclusions, disclaimers, or any commentary.
-
-RULES:
-1. List national public holidays (official non-working days) for the specified date worldwide
-2. Always list United States holidays first (if any exist for the date)
-3. Group holidays by name, then list affected countries as bullet points under each holiday
-4. Within each holiday group, order countries by population (largest first)
-5. For holidays unique to one country, list the holiday name with the country as a single bullet
-6. If no national public holidays exist for the date, return exactly: "No national public holidays found for this date."
-7. Use this format:
-   ## [Holiday Name]
-   - Country A
-   - Country B
-
-   ## [Another Holiday]
-   - Country C`;
+  "You are a precise world holiday reference database. Return ONLY the requested holiday information in clean Markdown format.";
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -68,8 +53,8 @@ export async function POST(request: Request) {
     }
 
     const formattedDate = formatDate(date);
-    const finalSystemPrompt = systemPrompt || `${SYSTEM_PROMPT} Today is ${formattedDate}.`;
-    const finalUserPrompt = userPrompt || `Return a plain-text list (no other Markdown). List national public holidays (off work) on ${formattedDate} worldwide. Always put United States holidays first (if any). Verify it is a non-working day in the country. Group by holiday name with countries in parentheses, ordered by popularity. Use the appropriate holiday lookup tools to get verified holiday data when available.`;
+    const finalSystemPrompt = systemPrompt || SYSTEM_PROMPT;
+    const finalUserPrompt = userPrompt || `List all public holidays observed worldwide on ${formattedDate}.`;
 
     console.log("Holiday prompt:", finalUserPrompt);
     console.log("Sending prompt to Cloudflare Workers AI with LoRA (streaming)");
@@ -85,7 +70,7 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      lora: "191db215-bb74-4eec-a4d4-92ad69b48012",
+      lora: "018896c4-f32e-423a-926b-561c401635c7",
       stream: true // Enable streaming
     };
 
