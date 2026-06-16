@@ -71,7 +71,8 @@ export async function POST(request: Request) {
         },
       ],
       lora: "018896c4-f32e-423a-926b-561c401635c7",
-      stream: true // Enable streaming
+      stream: true, // Enable streaming
+      max_tokens: 800 // Limit generation to prevent CF timeouts
     };
 
     // Run the processing in the background asynchronously
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify(requestPayload),
+            signal: AbortSignal.timeout(300000), // 5 minute local timeout
           },
         );
 
