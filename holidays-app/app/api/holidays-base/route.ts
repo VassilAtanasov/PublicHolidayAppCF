@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      temperature: 0.0, // Force absolute determinism
+      temperature: 0.1,
       top_p: 0.1,
       stream: true // Enable streaming
     };

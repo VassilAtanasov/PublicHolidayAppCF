@@ -71,6 +71,8 @@ export async function POST(request: Request) {
         },
       ],
       lora: "ac2d7866-40d1-4917-9ffc-de85018fcf28",
+      temperature: 0.1,
+      top_p: 0.1,
       stream: true, // Enable streaming
       max_tokens: 800 // Limit generation to prevent CF timeouts
     };

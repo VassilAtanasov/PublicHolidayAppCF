@@ -195,6 +195,16 @@ OUTPUT RULES:
 
 Today is ${formattedDate}.`;
 }
+
+// Exact prompts the LoRA model was fine-tuned on — must match restructure_data.py
+function buildLoraSystemPrompt(): string {
+  return "You are a precise world holiday reference database. Return ONLY the requested holiday information in clean Markdown format.";
+}
+
+function buildLoraUserPrompt(formattedDate: string): string {
+  return `List all public holidays observed worldwide on ${formattedDate}.`;
+}
+
 export default function Home() {
   const [date, setDate] = useState(getTodayDate);
   const [aiMode, setAiMode] = useState<"base" | "lora" | "mcp" | "rag" | "reasoning">("base");
@@ -202,20 +212,28 @@ export default function Home() {
   const [source, setSource] = useState<"mcp" | "model" | "model-fallback" | "lora" | "base" | "rag" | "reasoning" | "">("");
 
   // Prompts states
-  const [systemPrompt, setSystemPrompt] = useState(() => {
-    const formatted = formatDate(getTodayDate());
-    return buildSystemPrompt(formatted);
-  });
+  const [systemPrompt, setSystemPrompt] = useState(() => buildLoraSystemPrompt());
   const [userPrompt, setUserPrompt] = useState(() => {
     const formatted = formatDate(getTodayDate());
-    return `List national public holidays (off work) on ${formatted} worldwide.`;
+    return buildLoraUserPrompt(formatted);
+  });
+
+  const [userPrompts, setUserPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag" | "reasoning", string>>(() => {
+    const formatted = formatDate(getTodayDate());
+    return {
+      base: buildLoraUserPrompt(formatted),
+      lora: buildLoraUserPrompt(formatted),
+      mcp: `List national public holidays (off work) on ${formatted} worldwide.`,
+      rag: `List national public holidays (off work) on ${formatted} worldwide.`,
+      reasoning: `List national public holidays (off work) on ${formatted} worldwide.`,
+    };
   });
 
   const [systemPrompts, setSystemPrompts] = useState<Record<"base" | "lora" | "mcp" | "rag" | "reasoning", string>>(() => {
     const formatted = formatDate(getTodayDate());
     return {
-      base: buildSystemPrompt(formatted),
-      lora: buildSystemPrompt(formatted),
+      base: buildLoraSystemPrompt(),
+      lora: buildLoraSystemPrompt(),
       mcp: buildSystemPrompt(formatted),
       rag: buildSystemPrompt(formatted),
       reasoning: buildReasoningSystemPrompt(formatted),
@@ -260,18 +278,36 @@ export default function Home() {
       return nextMap;
     });
 
+    // Update the user prompts cache for each mode (base & LoRA prompts are rebuilt from scratch)
+    setUserPrompts(prevMap => ({
+      ...prevMap,
+      base: buildLoraUserPrompt(newFormatted),
+      lora: buildLoraUserPrompt(newFormatted),
+      mcp: prevMap.mcp.replaceAll(prevFormatted, newFormatted),
+      rag: prevMap.rag.replaceAll(prevFormatted, newFormatted),
+      reasoning: prevMap.reasoning.replaceAll(prevFormatted, newFormatted),
+    }));
+
     // Update the active system prompt
     setSystemPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
 
-    // Update the shared user prompt
-    setUserPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
+    // Update the active user prompt (base & LoRA modes get rebuilt, others get string-replaced)
+    if (aiMode === "lora" || aiMode === "base") {
+      setUserPrompt(buildLoraUserPrompt(newFormatted));
+    } else {
+      setUserPrompt(prev => prev.replaceAll(prevFormatted, newFormatted));
+    }
   }
 
   function handleAiModeChange(newMode: "base" | "lora" | "mcp" | "rag" | "reasoning") {
-    // 1. Save current active system prompt & execution details into the cache of the OLD mode
+    // 1. Save current active system prompt, user prompt & execution details into the cache of the OLD mode
     setSystemPrompts(prev => ({
       ...prev,
       [aiMode]: systemPrompt
+    }));
+    setUserPrompts(prev => ({
+      ...prev,
+      [aiMode]: userPrompt
     }));
 
     setExecutionCache(prev => ({
@@ -279,9 +315,10 @@ export default function Home() {
       [aiMode]: { result, source, rawRequest, rawResponse, reasoning: reasoningOutput, error }
     }));
 
-    // 2. Load system prompt & execution details from the cache of the NEW mode
+    // 2. Load system prompt, user prompt & execution details from the cache of the NEW mode
     setAiMode(newMode);
     setSystemPrompt(systemPrompts[newMode]);
+    setUserPrompt(userPrompts[newMode]);
 
     const cached = executionCache[newMode];
     setResult(cached.result);
