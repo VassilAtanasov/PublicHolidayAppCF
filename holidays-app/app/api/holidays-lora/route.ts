@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      lora: "b17cdb35-1f72-4868-8d63-5cd70aa6a853",
+      lora: "ac2d7866-40d1-4917-9ffc-de85018fcf28",
       stream: true, // Enable streaming
       max_tokens: 800 // Limit generation to prevent CF timeouts
     };
