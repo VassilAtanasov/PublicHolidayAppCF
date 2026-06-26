@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           content: finalUserPrompt,
         },
       ],
-      lora: "49116681-3912-4837-b646-c5d13dec1a44",
+      lora: "4cac35e5-419b-4542-8527-de5a794c1076",
       temperature: 0.1,
       top_p: 0.1,
       stream: true, // Enable streaming
