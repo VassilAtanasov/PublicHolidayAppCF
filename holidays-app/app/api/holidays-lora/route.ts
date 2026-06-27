@@ -62,19 +62,15 @@ export async function POST(request: Request) {
     const requestPayload = {
       messages: [
         {
-          role: "system",
-          content: finalSystemPrompt,
-        },
-        {
           role: "user",
-          content: finalUserPrompt,
+          content: `${finalSystemPrompt}\n\n${finalUserPrompt}`,
         },
       ],
       lora: "4cac35e5-419b-4542-8527-de5a794c1076",
       temperature: 0.1,
       top_p: 0.1,
       stream: true, // Enable streaming
-      max_tokens: 800 // Limit generation to prevent CF timeouts
+      max_tokens: 350 // Limit generation to prevent CF gateway timeouts
     };
 
     // Run the processing in the background asynchronously
