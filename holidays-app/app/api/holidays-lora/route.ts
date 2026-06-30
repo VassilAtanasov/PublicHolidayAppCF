@@ -66,7 +66,7 @@ export async function POST(request: Request) {
           content: `${finalSystemPrompt}\n\n${finalUserPrompt}`,
         },
       ],
-      lora: "4cac35e5-419b-4542-8527-de5a794c1076",
+      lora: "d13c21ac-554d-4c22-ac9f-40c92aa27c2e",
       temperature: 0.1,
       top_p: 0.1,
       stream: true, // Enable streaming
